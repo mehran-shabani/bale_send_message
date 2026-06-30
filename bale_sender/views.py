@@ -1,10 +1,11 @@
+import logging
 from pathlib import Path
 from threading import Thread
 from uuid import uuid4
 
 from django.conf import settings
 from django.contrib import messages
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -15,15 +16,16 @@ from .models import MessageBatch, MessageRecipient
 from .core import process_excel_batch
 
 
+logger = logging.getLogger(__name__)
 
 def _run_batch_in_background(batch_id: int, file_path: str, options: dict) -> None:
     close_old_connections()
     try:
         batch = MessageBatch.objects.get(pk=batch_id)
         process_excel_batch(batch=batch, file_path=file_path, **options)
-    except Exception:
+    except Exception as exc:
         # process_excel_batch stores the readable failure message on the batch.
-        pass
+        logger.exception("Error processing batch %s in background: %s", batch_id, exc)
     finally:
         close_old_connections()
 
@@ -64,11 +66,13 @@ def dashboard(request):
                 "sheet_name": form.cleaned_data["sheet_name"] or None,
                 "skip_duplicates": form.cleaned_data["skip_duplicates"],
             }
-            Thread(
-                target=_run_batch_in_background,
-                args=(batch.id, str(uploaded_path), options),
-                daemon=True,
-            ).start()
+            transaction.on_commit(
+                lambda: Thread(
+                    target=_run_batch_in_background,
+                    args=(batch.id, str(uploaded_path), options),
+                    daemon=True,
+                ).start()
+            )
             messages.success(request, "فایل ثبت شد و پردازش در پس‌زمینه شروع شد. وضعیت را در همین صفحه دنبال کن.")
             return redirect("bale_batch_detail", batch_id=batch.id)
     else:

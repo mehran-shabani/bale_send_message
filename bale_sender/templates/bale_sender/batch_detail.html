@@ -1,7 +1,13 @@
 {% extends "bale_sender/base.html" %}
 {% block title %}گزارش ارسال{% endblock %}
 {% block content %}
-{% if batch.status == "pending" or batch.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}
+{% if batch.status == "pending" or batch.status == "running" %}
+<script>
+  setTimeout(function() {
+    window.location.reload();
+  }, 5000);
+</script>
+{% endif %}
 <div class="card">
   <h2>گزارش batch #{{ batch.id }}</h2>
   <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: <b>{% if batch.dry_run %}تست{% else %}ارسال واقعی{% endif %}</b> | وضعیت: <b>{{ batch.get_status_display }}</b></p>

@@ -196,7 +196,7 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
 
         for item in recipients:
             final_text = render_message(batch.message_template, item)
-            obj = MessageRecipient.objects.create(
+            obj = MessageRecipient(
                 batch=batch,
                 row_number=item.row_number,
                 first_name=item.first_name,
