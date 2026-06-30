@@ -9,33 +9,37 @@
 </script>
 {% endif %}
 <div class="card">
-  <h2>گزارش batch #{{ batch.id }}</h2>
-  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: <b>{% if batch.dry_run %}تست{% else %}ارسال واقعی{% endif %}</b> | وضعیت: <b>{{ batch.get_status_display }}</b></p>
+  <h2>گزارش ارسال #{{ batch.id }}</h2>
+  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: {% if batch.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %} | وضعیت: <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span></p>
   {% if batch.status == "pending" or batch.status == "running" %}
-    <p class="muted">در حال پردازش... این صفحه هر ۵ ثانیه به‌روزرسانی می‌شود. <a href="">refresh دستی</a></p>
+    <p class="muted">در حال پردازش... این صفحه هر ۵ ثانیه به‌روزرسانی می‌شود. <a href="">به‌روزرسانی دستی</a></p>
   {% endif %}
   {% if batch.status == "failed" %}
-    <p class="error">{{ batch.error_message|default:"پردازش با خطا متوقف شد." }}</p>
+    <p class="alert alert-danger">{{ batch.error_message|default:"پردازش با خطا متوقف شد." }}</p>
   {% endif %}
-  <p>{% if batch.report_path %}<a class="btn green" href="{% url 'bale_download_report' batch.id %}">دانلود گزارش Excel</a>{% endif %} <a class="btn gray" href="/">ارسال جدید</a></p>
+  <p>{% if batch.report_path %}<a class="btn green" href="{% url 'bale_download_report' batch.id %}">دانلود گزارش Excel</a>{% endif %} <a class="btn secondary" href="/">ارسال جدید</a></p>
   <div class="grid">
-    <div class="stat"><span>کل</span><b>{{ batch.total_rows }}</b></div>
-    <div class="stat"><span>ارسال موفق API</span><b>{{ batch.total_sent }}</b></div>
-    <div class="stat"><span>dry-run</span><b>{{ stats.dry_run }}</b></div>
-    <div class="stat"><span>شماره نامعتبر</span><b>{{ batch.total_invalid }}</b></div>
-    <div class="stat"><span>تکراری</span><b>{{ batch.total_duplicate }}</b></div>
-    <div class="stat"><span>کاربر بله نیست</span><b>{{ batch.total_not_bale_user }}</b></div>
-    <div class="stat"><span>Rate limit</span><b>{{ batch.total_rate_limited }}</b></div>
-    <div class="stat"><span>خطا</span><b>{{ batch.total_failed }}</b></div>
+    <div class="stat"><span>کل ردیف‌ها</span><b>{{ batch.total_rows }}</b></div>
+    <div class="stat stat-success"><span>موفق‌ها: ارسال موفق API</span><b>{{ batch.total_sent }}</b></div>
+    <div class="stat stat-error"><span>خطاها: شماره نامعتبر</span><b>{{ batch.total_invalid }}</b></div>
+    <div class="stat stat-error"><span>خطاها: خطای ارسال</span><b>{{ batch.total_failed }}</b></div>
+    <div class="stat stat-warning"><span>قابل بررسی: تکراری</span><b>{{ batch.total_duplicate }}</b></div>
+    <div class="stat stat-warning"><span>قابل بررسی: کاربر بله نیست</span><b>{{ batch.total_not_bale_user }}</b></div>
+    <div class="stat stat-warning"><span>قابل بررسی: محدودیت سرعت</span><b>{{ batch.total_rate_limited }}</b></div>
+    <div class="stat stat-warning"><span>قابل بررسی: نیاز به شارژ</span><b>{{ batch.total_payment_required }}</b></div>
+    <div class="stat stat-error"><span>خطاها: خطای تنظیمات</span><b>{{ batch.total_config_error }}</b></div>
+    <div class="stat stat-muted"><span>تست بدون ارسال</span><b>{{ stats.dry_run }}</b></div>
   </div>
 </div>
 <div class="card">
   <h3>جزئیات ۳۰۰ ردیف اول</h3>
-  <table>
-    <tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>HTTP</th><th>کد API</th><th>پیام/خطا</th></tr>
-    {% for r in recipients %}
-      <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td>{{ r.get_status_display }}</td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
-    {% empty %}<tr><td colspan="7">ردیفی وجود ندارد.</td></tr>{% endfor %}
-  </table>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>وضعیت HTTP</th><th>کد API</th><th>پیام/خطا</th></tr>
+      {% for r in recipients %}
+        <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
+      {% empty %}<tr><td colspan="7">ردیفی وجود ندارد.</td></tr>{% endfor %}
+    </table>
+  </div>
 </div>
 {% endblock %}
