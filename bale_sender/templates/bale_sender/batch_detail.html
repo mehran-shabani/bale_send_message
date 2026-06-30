@@ -1,10 +1,17 @@
 {% extends "bale_sender/base.html" %}
 {% block title %}گزارش ارسال{% endblock %}
 {% block content %}
+{% if batch.status == "pending" or batch.status == "running" %}<meta http-equiv="refresh" content="5">{% endif %}
 <div class="card">
   <h2>گزارش batch #{{ batch.id }}</h2>
-  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: <b>{% if batch.dry_run %}تست{% else %}ارسال واقعی{% endif %}</b></p>
-  <p><a class="btn green" href="{% url 'bale_download_report' batch.id %}">دانلود گزارش Excel</a> <a class="btn gray" href="/">ارسال جدید</a></p>
+  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: <b>{% if batch.dry_run %}تست{% else %}ارسال واقعی{% endif %}</b> | وضعیت: <b>{{ batch.get_status_display }}</b></p>
+  {% if batch.status == "pending" or batch.status == "running" %}
+    <p class="muted">در حال پردازش... این صفحه هر ۵ ثانیه به‌روزرسانی می‌شود. <a href="">refresh دستی</a></p>
+  {% endif %}
+  {% if batch.status == "failed" %}
+    <p class="error">{{ batch.error_message|default:"پردازش با خطا متوقف شد." }}</p>
+  {% endif %}
+  <p>{% if batch.report_path %}<a class="btn green" href="{% url 'bale_download_report' batch.id %}">دانلود گزارش Excel</a>{% endif %} <a class="btn gray" href="/">ارسال جدید</a></p>
   <div class="grid">
     <div class="stat"><span>کل</span><b>{{ batch.total_rows }}</b></div>
     <div class="stat"><span>ارسال موفق API</span><b>{{ batch.total_sent }}</b></div>

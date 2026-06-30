@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card">
   <h2>ارسال پیام از فایل Excel</h2>
-  <p class="muted">ستون‌های لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>موبایل</b>. اول dry-run بگیر، بعد ارسال واقعی.</p>
+  <p class="muted">ستون‌های لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>موبایل</b>. بعد از ثبت فایل سریع به صفحه جزئیات batch هدایت می‌شوی و پردازش در پس‌زمینه ادامه پیدا می‌کند.</p>
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.non_field_errors }}
@@ -21,10 +21,10 @@
 <div class="card">
   <h3>گزارش‌های اخیر</h3>
   <table>
-    <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>کل</th><th>موفق</th><th>خطا</th><th>زمان</th></tr>
+    <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>خطا</th><th>زمان</th></tr>
     {% for b in recent_batches %}
-      <tr><td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td><td>{{ b.source_file_name }}</td><td>{% if b.dry_run %}تست{% else %}ارسال واقعی{% endif %}</td><td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_failed }}</td><td>{{ b.started_at }}</td></tr>
-    {% empty %}<tr><td colspan="7">هنوز گزارشی وجود ندارد.</td></tr>{% endfor %}
+      <tr><td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td><td>{{ b.source_file_name }}</td><td>{% if b.dry_run %}تست{% else %}ارسال واقعی{% endif %}</td><td>{{ b.get_status_display }}</td><td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_failed }}</td><td>{{ b.started_at }}</td></tr>
+    {% empty %}<tr><td colspan="8">هنوز گزارشی وجود ندارد.</td></tr>{% endfor %}
   </table>
 </div>
 {% endblock %}
