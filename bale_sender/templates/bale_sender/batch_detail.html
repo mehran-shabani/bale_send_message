@@ -15,31 +15,23 @@
   <a class="btn ghost" href="{% url 'bale_batch_list' %}">همه گزارش‌ها</a>
 {% endblock %}
 {% block content %}
-{% if batch.status == "pending" or batch.status == "running" %}
-<script>
-  setTimeout(function() {
-    window.location.reload();
-  }, 5000);
-</script>
-{% endif %}
-
 <div class="page-head">
   <div>
     <h2>{{ batch.source_file_name }}</h2>
     <p>
       {% if batch.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}
-      <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
+      <span id="batch-status-badge" class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
     </p>
   </div>
 </div>
 
 <div class="stack">
   {% if batch.status == "pending" or batch.status == "running" %}
-    <div class="alert alert-info">پردازش در حال انجام است و صفحه خودکار به‌روزرسانی می‌شود.</div>
+    <div class="alert alert-info">پردازش در حال انجام است و ۱۰ ارسال آخر به‌صورت زنده به‌روزرسانی می‌شود.</div>
   {% endif %}
   {% if batch.cancel_requested %}
     {% if batch.status == "pending" or batch.status == "running" %}
-      <div class="alert alert-danger">درخواست توقف ثبت شده است. پردازش بعد از ارسال فعلی متوقف می‌شود.</div>
+      <div class="alert alert-danger">درخواست توقف ثبت شده است. پردازش بعد از ارسال فعلی یا فاصله انتظار فعلی متوقف می‌شود.</div>
     {% endif %}
   {% endif %}
   {% if batch.status == "failed" %}
@@ -51,16 +43,42 @@
 
   <section class="card">
     <div class="grid">
-      <div class="stat"><span>کل ردیف‌ها</span><b>{{ batch.total_rows }}</b></div>
-      <div class="stat stat-success"><span>ارسال موفق API</span><b>{{ batch.total_sent }}</b></div>
-      <div class="stat stat-error"><span>شماره نامعتبر</span><b>{{ batch.total_invalid }}</b></div>
-      <div class="stat stat-error"><span>خطای ارسال</span><b>{{ batch.total_failed }}</b></div>
-      <div class="stat stat-warning"><span>تکراری</span><b>{{ batch.total_duplicate }}</b></div>
-      <div class="stat stat-warning"><span>کاربر بله نیست</span><b>{{ batch.total_not_bale_user }}</b></div>
-      <div class="stat stat-warning"><span>محدودیت سرعت</span><b>{{ batch.total_rate_limited }}</b></div>
-      <div class="stat stat-warning"><span>نیاز به شارژ</span><b>{{ batch.total_payment_required }}</b></div>
-      <div class="stat stat-error"><span>خطای تنظیمات</span><b>{{ batch.total_config_error }}</b></div>
+      <div class="stat"><span>کل ردیف‌ها</span><b data-live-stat="total_rows">{{ batch.total_rows }}</b></div>
+      <div class="stat stat-success"><span>ارسال موفق API</span><b data-live-stat="total_sent">{{ batch.total_sent }}</b></div>
+      <div class="stat stat-error"><span>شماره نامعتبر</span><b data-live-stat="total_invalid">{{ batch.total_invalid }}</b></div>
+      <div class="stat stat-error"><span>خطای ارسال</span><b data-live-stat="total_failed">{{ batch.total_failed }}</b></div>
+      <div class="stat stat-warning"><span>تکراری</span><b data-live-stat="total_duplicate">{{ batch.total_duplicate }}</b></div>
+      <div class="stat stat-warning"><span>کاربر بله نیست</span><b data-live-stat="total_not_bale_user">{{ batch.total_not_bale_user }}</b></div>
+      <div class="stat stat-warning"><span>محدودیت سرعت</span><b data-live-stat="total_rate_limited">{{ batch.total_rate_limited }}</b></div>
+      <div class="stat stat-warning"><span>نیاز به شارژ</span><b data-live-stat="total_payment_required">{{ batch.total_payment_required }}</b></div>
+      <div class="stat stat-error"><span>خطای تنظیمات</span><b data-live-stat="total_config_error">{{ batch.total_config_error }}</b></div>
       <div class="stat stat-muted"><span>تست بدون ارسال</span><b>{{ stats.dry_run }}</b></div>
+    </div>
+  </section>
+
+  <section class="card" id="live-status-card" data-live-url="{% url 'bale_batch_live_status' batch.id %}">
+    <div class="section-title">
+      <h2>۱۰ ارسال آخر به‌صورت زنده</h2>
+      <span class="muted" id="live-status-note">هر ۲ ثانیه به‌روزرسانی می‌شود.</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>HTTP</th><th>پیام/خطا</th></tr></thead>
+        <tbody id="live-recipients-body">
+          {% for r in recipients|slice:":10" %}
+            <tr>
+              <td>{{ r.row_number }}</td>
+              <td>{{ r.full_name }}</td>
+              <td class="ltr">{{ r.normalized_phone }}</td>
+              <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
+              <td>{{ r.http_status|default:"" }}</td>
+              <td>{{ r.api_message }} {{ r.error_message }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
 
@@ -108,4 +126,75 @@
     {% endif %}
   </section>
 </div>
+
+<script>
+(function() {
+  const card = document.getElementById('live-status-card');
+  if (!card) return;
+  const url = card.dataset.liveUrl;
+  const tbody = document.getElementById('live-recipients-body');
+  const note = document.getElementById('live-status-note');
+  const statusBadge = document.getElementById('batch-status-badge');
+  let timer = null;
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>'"]/g, function(ch) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[ch];
+    });
+  }
+
+  function renderRows(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(row) {
+      return '<tr>' +
+        '<td>' + escapeHtml(row.row_number) + '</td>' +
+        '<td>' + escapeHtml(row.full_name) + '</td>' +
+        '<td class="ltr">' + escapeHtml(row.normalized_phone) + '</td>' +
+        '<td><span class="badge badge-' + escapeHtml(row.status) + '">' + escapeHtml(row.status_label) + '</span></td>' +
+        '<td>' + escapeHtml(row.http_status) + '</td>' +
+        '<td>' + escapeHtml(row.message) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function updateStats(batch) {
+    document.querySelectorAll('[data-live-stat]').forEach(function(el) {
+      const key = el.dataset.liveStat;
+      if (Object.prototype.hasOwnProperty.call(batch, key)) {
+        el.textContent = batch[key];
+      }
+    });
+    if (statusBadge) {
+      statusBadge.className = 'badge badge-' + batch.status;
+      statusBadge.textContent = batch.status_label;
+    }
+  }
+
+  function poll() {
+    fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+        updateStats(data.batch);
+        renderRows(data.recent_recipients);
+        if (!data.batch.is_active) {
+          note.textContent = 'پردازش تمام شده است.';
+          if (timer) clearInterval(timer);
+        } else if (data.batch.cancel_requested) {
+          note.textContent = 'درخواست توقف ثبت شده و آخرین وضعیت‌ها به‌روزرسانی می‌شود.';
+        } else {
+          note.textContent = 'هر ۲ ثانیه به‌روزرسانی می‌شود.';
+        }
+      })
+      .catch(function() {
+        note.textContent = 'به‌روزرسانی زنده موقتاً ناموفق بود.';
+      });
+  }
+
+  poll();
+  timer = setInterval(poll, 2000);
+})();
+</script>
 {% endblock %}
