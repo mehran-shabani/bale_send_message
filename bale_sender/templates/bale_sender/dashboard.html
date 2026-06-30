@@ -3,38 +3,98 @@
 {% block content %}
 <div class="card">
   <h2>ارسال پیام از فایل Excel</h2>
-  <p class="muted">بعد از ثبت فایل سریع به صفحه جزئیات batch هدایت می‌شوی و پردازش در پس‌زمینه ادامه پیدا می‌کند.</p>
-  <div class="helptext">
-    <p><b>فرمت فایل Excel:</b> ردیف اول باید header باشد و حداقل این ستون‌ها را داشته باشد:</p>
+  <p class="muted">بعد از ثبت فایل، به صفحه جزئیات گزارش هدایت می‌شوی و پردازش در پس‌زمینه ادامه پیدا می‌کند.</p>
+
+  <div class="quick-guide">
+    <h3>راهنمای سریع قبل از شروع</h3>
     <ul>
-      <li>ستون نام: یکی از <code>نام</code>، <code>اسم</code>، <code>first_name</code></li>
-      <li>ستون نام خانوادگی: یکی از <code>نام خانوادگی</code>، <code>فامیلی</code>، <code>last_name</code></li>
-      <li>ستون موبایل: یکی از <code>موبایل</code>، <code>شماره موبایل</code>، <code>شماره همراه</code>، <code>mobile</code>، <code>phone</code></li>
+      <li><b>ستون‌های لازم Excel:</b> نام، نام خانوادگی و موبایل. نام‌های جایگزین مثل <code>first_name</code>، <code>last_name</code>، <code>mobile</code> و <code>phone</code> هم پذیرفته می‌شوند.</li>
+      <li><b>placeholderهای مجاز پیام:</b> <code>{first_name}</code>، <code>{last_name}</code>، <code>{full_name}</code>، <code>{phone}</code></li>
+      <li><b>پیشنهاد مهم:</b> ابتدا «فقط تست» را اجرا کن و بعد از بررسی گزارش، ارسال واقعی را انجام بده.</li>
     </ul>
-    <p><b>نمونه header قابل قبول:</b> <code>نام | نام خانوادگی | موبایل</code></p>
-    <p><b>placeholderهای مجاز متن پیام:</b> <code>{first_name}</code>، <code>{last_name}</code>، <code>{full_name}</code>، <code>{phone}</code></p>
   </div>
+
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.non_field_errors }}
-    {% for field in form %}
-      <div>
-        <label>{{ field.label }}</label>
-        {{ field }}
-        {% if field.help_text %}<div class="helptext">{{ field.help_text }}</div>{% endif %}
-        {% for error in field.errors %}<div class="error">{{ error }}</div>{% endfor %}
+
+    <div class="form-section">
+      <h3>۱. فایل Excel</h3>
+      <label>{{ form.excel_file.label }}</label>
+      {{ form.excel_file }}
+      {% if form.excel_file.help_text %}<div class="helptext">{{ form.excel_file.help_text }}</div>{% endif %}
+      {% for error in form.excel_file.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.sheet_name.label }}</label>
+      {{ form.sheet_name }}
+      {% if form.sheet_name.help_text %}<div class="helptext">{{ form.sheet_name.help_text }}</div>{% endif %}
+      {% for error in form.sheet_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <div class="form-section">
+      <h3>۲. متن پیام</h3>
+      <label>{{ form.message_template.label }}</label>
+      {{ form.message_template }}
+      {% if form.message_template.help_text %}<div class="helptext">{{ form.message_template.help_text }}</div>{% endif %}
+      {% for error in form.message_template.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <div class="form-section">
+      <h3>۳. تنظیمات ارسال</h3>
+      <label>{{ form.send_mode.label }}</label>
+      {{ form.send_mode }}
+      <div class="alert alert-danger">گزینه «ارسال واقعی» پیام را برای مخاطبان می‌فرستد و قابل بازگشت نیست. قبل از آن حتماً یک اجرای تستی انجام بده.</div>
+      {% for error in form.send_mode.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.limit.label }}</label>
+      {{ form.limit }}
+      {% if form.limit.help_text %}<div class="helptext">{{ form.limit.help_text }}</div>{% endif %}
+      {% for error in form.limit.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.sleep_seconds.label }}</label>
+      {{ form.sleep_seconds }}
+      {% if form.sleep_seconds.help_text %}<div class="helptext">{{ form.sleep_seconds.help_text }}</div>{% endif %}
+      {% for error in form.sleep_seconds.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.skip_duplicates }} {{ form.skip_duplicates.label }}</label>
+      {% if form.skip_duplicates.help_text %}<div class="helptext">{{ form.skip_duplicates.help_text }}</div>{% endif %}
+      {% for error in form.skip_duplicates.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <div class="form-section">
+      <h3>۴. دکمه لینک‌دار</h3>
+      <label>{{ form.button_enabled }} {{ form.button_enabled.label }}</label>
+      {% for error in form.button_enabled.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.button_text.label }}</label>
+      {{ form.button_text }}
+      {% for error in form.button_text.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      <label>{{ form.button_url.label }}</label>
+      {{ form.button_url }}
+      {% for error in form.button_url.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <div class="form-section">
+      <h3>۵. تأیید نهایی</h3>
+      <div class="danger-zone">
+        <label>{{ form.confirm_real_send }} {{ form.confirm_real_send.label }}</label>
+        <div class="helptext">این گزینه فقط برای ارسال واقعی لازم است و نشان می‌دهد از غیرقابل بازگشت بودن ارسال آگاه هستی.</div>
+        {% for error in form.confirm_real_send.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
       </div>
-    {% endfor %}
-    <p><button type="submit">شروع پردازش</button></p>
+      <p><button type="submit">شروع پردازش</button></p>
+    </div>
   </form>
 </div>
 <div class="card">
   <h3>گزارش‌های اخیر</h3>
-  <table>
-    <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>خطا</th><th>زمان</th></tr>
-    {% for b in recent_batches %}
-      <tr><td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td><td>{{ b.source_file_name }}</td><td>{% if b.dry_run %}تست{% else %}ارسال واقعی{% endif %}</td><td>{{ b.get_status_display }}</td><td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_failed }}</td><td>{{ b.started_at }}</td></tr>
-    {% empty %}<tr><td colspan="8">هنوز گزارشی وجود ندارد.</td></tr>{% endfor %}
-  </table>
+  <div class="table-wrap">
+    <table>
+      <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>خطا</th><th>زمان</th></tr>
+      {% for b in recent_batches %}
+        <tr><td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td><td>{{ b.source_file_name }}</td><td>{% if b.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}</td><td>{% if b.status == "pending" %}<span class="badge badge-muted">{{ b.get_status_display }}</span>{% elif b.status == "running" %}<span class="badge badge-warning">{{ b.get_status_display }}</span>{% elif b.status == "finished" %}<span class="badge badge-success">{{ b.get_status_display }}</span>{% elif b.status == "failed" %}<span class="badge badge-error">{{ b.get_status_display }}</span>{% else %}<span class="badge badge-muted">{{ b.get_status_display }}</span>{% endif %}</td><td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_failed }}</td><td>{{ b.started_at }}</td></tr>
+      {% empty %}<tr><td colspan="8">هنوز گزارشی وجود ندارد.</td></tr>{% endfor %}
+    </table>
+  </div>
 </div>
 {% endblock %}
