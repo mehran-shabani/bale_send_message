@@ -11,7 +11,7 @@
           <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
           <td>{{ b.source_file_name }}</td>
           <td>{% if b.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}</td>
-          <td>{% if b.status == "pending" %}<span class="badge badge-muted">{{ b.get_status_display }}</span>{% elif b.status == "running" %}<span class="badge badge-warning">{{ b.get_status_display }}</span>{% elif b.status == "finished" %}<span class="badge badge-success">{{ b.get_status_display }}</span>{% elif b.status == "failed" %}<span class="badge badge-error">{{ b.get_status_display }}</span>{% else %}<span class="badge badge-muted">{{ b.get_status_display }}</span>{% endif %}</td>
+          <td><span class="badge badge-{{ b.status }}">{{ b.get_status_display }}</span></td>
           <td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_invalid }}</td><td>{{ b.total_duplicate }}</td><td>{{ b.total_not_bale_user }}</td><td>{{ b.started_at }}</td>
         </tr>
       {% empty %}<tr><td colspan="10">هنوز گزارشی ثبت نشده است.</td></tr>{% endfor %}

@@ -10,7 +10,7 @@
 {% endif %}
 <div class="card">
   <h2>گزارش ارسال #{{ batch.id }}</h2>
-  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: {% if batch.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %} | وضعیت: {% if batch.status == "pending" %}<span class="badge badge-muted">{{ batch.get_status_display }}</span>{% elif batch.status == "running" %}<span class="badge badge-warning">{{ batch.get_status_display }}</span>{% elif batch.status == "finished" %}<span class="badge badge-success">{{ batch.get_status_display }}</span>{% elif batch.status == "failed" %}<span class="badge badge-error">{{ batch.get_status_display }}</span>{% else %}<span class="badge badge-muted">{{ batch.get_status_display }}</span>{% endif %}</p>
+  <p>فایل: <b>{{ batch.source_file_name }}</b> | حالت: {% if batch.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %} | وضعیت: <span class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span></p>
   {% if batch.status == "pending" or batch.status == "running" %}
     <p class="muted">در حال پردازش... این صفحه هر ۵ ثانیه به‌روزرسانی می‌شود. <a href="">به‌روزرسانی دستی</a></p>
   {% endif %}
@@ -27,6 +27,7 @@
     <div class="stat stat-warning"><span>قابل بررسی: کاربر بله نیست</span><b>{{ batch.total_not_bale_user }}</b></div>
     <div class="stat stat-warning"><span>قابل بررسی: محدودیت سرعت</span><b>{{ batch.total_rate_limited }}</b></div>
     <div class="stat stat-warning"><span>قابل بررسی: نیاز به شارژ</span><b>{{ batch.total_payment_required }}</b></div>
+    <div class="stat stat-error"><span>خطاها: خطای تنظیمات</span><b>{{ batch.total_config_error }}</b></div>
     <div class="stat stat-muted"><span>تست بدون ارسال</span><b>{{ stats.dry_run }}</b></div>
   </div>
 </div>
@@ -36,7 +37,7 @@
     <table>
       <tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>وضعیت HTTP</th><th>کد API</th><th>پیام/خطا</th></tr>
       {% for r in recipients %}
-        <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td>{% if r.status == "sent" %}<span class="badge badge-success">{{ r.get_status_display }}</span>{% elif r.status == "failed" or r.status == "invalid_phone" or r.status == "config_error" %}<span class="badge badge-error">{{ r.get_status_display }}</span>{% elif r.status == "rate_limited" or r.status == "payment_required" %}<span class="badge badge-warning">{{ r.get_status_display }}</span>{% elif r.status == "dry_run" or r.status == "duplicate" or r.status == "not_bale_user" %}<span class="badge badge-muted">{{ r.get_status_display }}</span>{% else %}<span class="badge badge-muted">{{ r.get_status_display }}</span>{% endif %}</td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
+        <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
       {% empty %}<tr><td colspan="7">ردیفی وجود ندارد.</td></tr>{% endfor %}
     </table>
   </div>
