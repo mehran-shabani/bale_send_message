@@ -57,7 +57,7 @@
       <section class="card">
         <div class="section-title">
           <h2><span class="step">۲</span>پیش‌نمایش</h2>
-          <span class="muted">{{ preview.shown_rows }} از {{ preview.total_rows }} ردیف</span>
+          <span class="muted">{{ preview.shown_rows }} از {{ preview.total_rows }} ردیف انتخاب‌شده، کل فایل {{ preview.total_file_rows }} ردیف</span>
         </div>
         <div class="grid">
           <div class="stat stat-success"><span>آماده ارسال</span><b>{{ preview.valid_rows }}</b></div>
@@ -105,6 +105,18 @@
             {{ form.limit }}
             {% if form.limit.help_text %}<div class="helptext">{{ form.limit.help_text }}</div>{% endif %}
             {% for error in form.limit.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.range_start.label_tag }}
+            {{ form.range_start }}
+            {% if form.range_start.help_text %}<div class="helptext">{{ form.range_start.help_text }}</div>{% endif %}
+            {% for error in form.range_start.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.range_end.label_tag }}
+            {{ form.range_end }}
+            {% if form.range_end.help_text %}<div class="helptext">{{ form.range_end.help_text }}</div>{% endif %}
+            {% for error in form.range_end.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
           </div>
           <div class="field">
             {{ form.sleep_seconds.label_tag }}

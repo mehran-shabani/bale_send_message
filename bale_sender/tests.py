@@ -84,6 +84,19 @@ class ExcelTests(TestCase):
         self.assertEqual(len(preview["rows"]), 2)
         self.assertEqual(preview["rows"][0]["status"], "ok")
 
+    def test_build_excel_preview_applies_data_range(self):
+        preview = build_excel_preview(
+            self.make_excel(),
+            message_template="سلام {full_name}",
+            range_start=2,
+            range_end=2,
+        )
+
+        self.assertEqual(preview["total_file_rows"], 2)
+        self.assertEqual(preview["total_rows"], 1)
+        self.assertEqual(preview["rows"][0]["row_number"], 3)
+        self.assertEqual(preview["rows"][0]["first_name"], "زهرا")
+
 
 class MessageTemplateTests(TestCase):
     def test_render_message_allows_only_known_placeholders(self):
@@ -111,6 +124,21 @@ class MessageTemplateTests(TestCase):
             }
         )
         self.assertTrue(form.is_valid())
+
+    def test_upload_form_rejects_reversed_data_range(self):
+        form = UploadExcelForm(
+            data={
+                "uploaded_file_token": "token",
+                "message_template": "سلام {full_name}",
+                "send_mode": "dry_run",
+                "sleep_seconds": "0",
+                "range_start": "101",
+                "range_end": "100",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("range_end", form.errors)
 
     def test_single_message_test_form_validates_phone_and_template(self):
         form = SingleMessageTestForm(
@@ -180,6 +208,24 @@ class BatchTests(TestCase):
         self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.DUPLICATE).count(), 1)
         self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.INVALID_PHONE).count(), 1)
         self.assertTrue(report.exists())
+
+    def test_dry_run_batch_applies_data_range(self):
+        report = Path(tempfile.mkdtemp()) / "range.xlsx"
+        batch = run_excel_batch(
+            file_path=str(self.make_excel()),
+            message_template="سلام {full_name}",
+            dry_run=True,
+            report_path=str(report),
+            range_start=2,
+            range_end=3,
+        )
+
+        self.assertEqual(batch.range_start, 2)
+        self.assertEqual(batch.range_end, 3)
+        self.assertEqual(batch.total_rows, 2)
+        self.assertEqual(list(batch.recipients.values_list("row_number", flat=True)), [3, 4])
+        self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.DRY_RUN).count(), 1)
+        self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.INVALID_PHONE).count(), 1)
 
     @patch("bale_sender.core.BaleSafirClient.send")
     def test_single_recipient_test_send_creates_reported_batch(self, send_mock):
@@ -289,9 +335,26 @@ class ReportViewTests(TestCase):
             status=MessageBatch.Status.RUNNING,
         )
 
-        response = self.client.post(reverse("bale_cancel_batch", args=[batch.id]))
+        with tempfile.TemporaryDirectory() as base_dir, override_settings(BASE_DIR=base_dir):
+            response = self.client.post(reverse("bale_cancel_batch", args=[batch.id]))
 
         self.assertRedirects(response, reverse("bale_batch_detail", args=[batch.id]))
         batch.refresh_from_db()
         self.assertTrue(batch.cancel_requested)
-        self.assertIn("درخواست توقف", batch.error_message)
+        self.assertEqual(batch.status, MessageBatch.Status.CANCELLED)
+        self.assertIsNotNone(batch.finished_at)
+        self.assertIn("متوقف شد", batch.error_message)
+        self.assertTrue(batch.report_path)
+
+    def test_live_status_treats_cancel_requested_batch_as_inactive(self):
+        batch = MessageBatch.objects.create(
+            source_file_name="sample.xlsx",
+            message_template="سلام",
+            status=MessageBatch.Status.RUNNING,
+            cancel_requested=True,
+        )
+
+        response = self.client.get(reverse("bale_batch_live_status", args=[batch.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["batch"]["is_active"])

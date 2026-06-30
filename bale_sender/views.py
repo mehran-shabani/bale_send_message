@@ -17,7 +17,7 @@ from openpyxl import Workbook
 
 from .forms import SingleMessageTestForm, UploadExcelForm
 from .models import MessageBatch, MessageRecipient
-from .core import build_excel_preview, process_excel_batch, send_single_recipient_test
+from .core import build_excel_preview, cancel_batch_immediately, process_excel_batch, send_single_recipient_test
 
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,8 @@ def dashboard(request):
                         sheet_name=upload_form.cleaned_data["sheet_name"] or None,
                         message_template=upload_form.cleaned_data["message_template"],
                         limit=10,
+                        range_start=upload_form.cleaned_data["range_start"],
+                        range_end=upload_form.cleaned_data["range_end"],
                     )
                     preview["file_name"] = uploaded_path.name
                     post_data = request.POST.copy()
@@ -180,11 +182,15 @@ def dashboard(request):
                         button_url=button_url or "",
                         dry_run=dry_run,
                         limit=upload_form.cleaned_data["limit"],
+                        range_start=upload_form.cleaned_data["range_start"],
+                        range_end=upload_form.cleaned_data["range_end"],
                     )
                     options = {
                         "sleep_seconds": upload_form.cleaned_data["sleep_seconds"],
                         "sheet_name": upload_form.cleaned_data["sheet_name"] or None,
                         "skip_duplicates": upload_form.cleaned_data["skip_duplicates"],
+                        "range_start": upload_form.cleaned_data["range_start"],
+                        "range_end": upload_form.cleaned_data["range_end"],
                     }
                     transaction.on_commit(
                         lambda: Thread(
@@ -274,7 +280,7 @@ def batch_live_status(request, batch_id):
                 "status": batch.status,
                 "status_label": batch.get_status_display(),
                 "cancel_requested": batch.cancel_requested,
-                "is_active": batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING},
+                "is_active": batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING} and not batch.cancel_requested,
                 "total_rows": sum(stats.values()),
                 "total_sent": stats[MessageRecipient.Status.SENT],
                 "total_failed": stats[MessageRecipient.Status.FAILED],
@@ -307,9 +313,12 @@ def cancel_batch(request, batch_id):
 
     batch = get_object_or_404(MessageBatch, pk=batch_id)
     if batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING}:
-        batch.cancel_requested = True
-        batch.error_message = "درخواست توقف ثبت شد. اگر ارسال فعلی در حال انجام باشد، بعد از پایان همان ارسال متوقف می‌شود."
-        batch.save(update_fields=["cancel_requested", "error_message"])
+        try:
+            cancel_batch_immediately(batch)
+        except Exception as exc:
+            logger.exception("Could not write cancellation report for batch %s: %s", batch.id, exc)
+            messages.error(request, "درخواست توقف ثبت شد، اما ساخت گزارش توقف با خطا روبه‌رو شد.")
+            return redirect("bale_batch_detail", batch_id=batch.id)
         messages.warning(request, "درخواست توقف ثبت شد.")
     else:
         messages.info(request, "این پردازش دیگر در حال اجرا نیست.")

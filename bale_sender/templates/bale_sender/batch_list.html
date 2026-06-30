@@ -43,11 +43,12 @@
     </div>
     <div class="table-wrap">
       <table>
-        <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>نامعتبر</th><th>تکراری</th><th>کاربر بله نیست</th><th>زمان</th></tr>
+        <tr><th>شناسه</th><th>فایل</th><th>بازه</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>نامعتبر</th><th>تکراری</th><th>کاربر بله نیست</th><th>زمان</th></tr>
         {% for b in batches %}
           <tr>
             <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
             <td>{{ b.source_file_name }}</td>
+            <td>{% if b.range_start or b.range_end %}{{ b.range_start|default:"۱" }} تا {{ b.range_end|default:"آخر" }}{% else %}کل فایل{% endif %}</td>
             <td>{% if b.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}</td>
             <td><span class="badge badge-{{ b.status }}">{{ b.get_status_display }}</span></td>
             <td>{{ b.total_rows }}</td>
@@ -58,7 +59,7 @@
             <td>{{ b.started_at }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="10" class="empty-state">هنوز گزارشی ثبت نشده است.</td></tr>
+          <tr><td colspan="11" class="empty-state">هنوز گزارشی ثبت نشده است.</td></tr>
         {% endfor %}
       </table>
     </div>

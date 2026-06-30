@@ -16,6 +16,8 @@ class MessageBatch(models.Model):
     button_url = models.URLField(blank=True)
     dry_run = models.BooleanField(default=True)
     limit = models.PositiveIntegerField(null=True, blank=True)
+    range_start = models.PositiveIntegerField(null=True, blank=True)
+    range_end = models.PositiveIntegerField(null=True, blank=True)
     total_rows = models.PositiveIntegerField(default=0)
     total_sent = models.PositiveIntegerField(default=0)
     total_failed = models.PositiveIntegerField(default=0)

@@ -10,6 +10,8 @@ class Command(BaseCommand):
         parser.add_argument("--file", required=True, help="Path to Excel file")
         parser.add_argument("--message", required=True, help="Message template. Supports {full_name}, {first_name}, {last_name}, {phone}")
         parser.add_argument("--sheet", default=None, help="Sheet name. Empty means first sheet")
+        parser.add_argument("--range-start", type=int, default=None, help="First data row to process. 1 means first row after header")
+        parser.add_argument("--range-end", type=int, default=None, help="Last data row to process, inclusive")
         parser.add_argument("--limit", type=int, default=None, help="Limit rows for test")
         parser.add_argument("--sleep", type=float, default=None, help="Seconds between real sends")
         parser.add_argument("--button-text", default=None, help="Inline button text")
@@ -27,6 +29,8 @@ class Command(BaseCommand):
                 limit=options["limit"],
                 sleep_seconds=options["sleep"],
                 sheet_name=options["sheet"],
+                range_start=options["range_start"],
+                range_end=options["range_end"],
                 button_text=options["button_text"],
                 button_url=options["button_url"],
                 skip_duplicates=not options["allow_duplicates"],

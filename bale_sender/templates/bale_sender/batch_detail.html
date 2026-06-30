@@ -20,6 +20,9 @@
     <h2>{{ batch.source_file_name }}</h2>
     <p>
       {% if batch.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}
+      {% if batch.range_start or batch.range_end %}
+        <span class="badge badge-muted">بازه داده: {{ batch.range_start|default:"۱" }} تا {{ batch.range_end|default:"آخر" }}</span>
+      {% endif %}
       <span id="batch-status-badge" class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
     </p>
   </div>

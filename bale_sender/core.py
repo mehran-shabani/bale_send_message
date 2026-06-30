@@ -156,8 +156,24 @@ def render_message(template: str, recipient: ExcelRecipient) -> str:
         raise ValueError("قالب پیام نامعتبر است و امکان ساخت متن پیام وجود ندارد.") from exc
 
 
-def build_excel_preview(file_path: str | Path, *, sheet_name: str | None = None, message_template: str, limit: int = 10) -> dict:
+def _apply_data_range(recipients: list[ExcelRecipient], *, range_start: int | None = None, range_end: int | None = None) -> list[ExcelRecipient]:
+    start_index = max((range_start or 1) - 1, 0)
+    end_index = range_end if range_end else None
+    return recipients[start_index:end_index]
+
+
+def build_excel_preview(
+    file_path: str | Path,
+    *,
+    sheet_name: str | None = None,
+    message_template: str,
+    limit: int = 10,
+    range_start: int | None = None,
+    range_end: int | None = None,
+) -> dict:
     recipients = read_excel_recipients(file_path, sheet_name=sheet_name)
+    total_file_rows = len(recipients)
+    recipients = _apply_data_range(recipients, range_start=range_start, range_end=range_end)
     seen: set[str] = set()
     preview_rows: list[dict] = []
     counts = {"ok": 0, "invalid_phone": 0, "duplicate": 0}
@@ -181,7 +197,10 @@ def build_excel_preview(file_path: str | Path, *, sheet_name: str | None = None,
             )
 
     return {
+        "total_file_rows": total_file_rows,
         "total_rows": len(recipients),
+        "range_start": range_start,
+        "range_end": range_end,
         "valid_rows": counts["ok"],
         "invalid_rows": counts["invalid_phone"],
         "duplicate_rows": counts["duplicate"],
@@ -306,7 +325,34 @@ def _sleep_until_cancel_or_timeout(batch: MessageBatch, seconds: float) -> bool:
     return _is_cancel_requested(batch)
 
 
-def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: float | None = None, sheet_name: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
+def cancel_batch_immediately(batch: MessageBatch) -> MessageBatch:
+    batch.cancel_requested = True
+    batch.status = MessageBatch.Status.CANCELLED
+    batch.finished_at = timezone.now()
+    batch.error_message = "پردازش با درخواست کاربر متوقف شد. اگر ارسال فعلی در لحظه توقف در حال انجام بوده باشد، ممکن است همان ارسال در گزارش ثبت شود."
+    update_fields = ["cancel_requested", "status", "finished_at", "error_message"]
+    if not batch.report_path:
+        reports_dir = Path(settings.BASE_DIR) / "reports"
+        batch.report_path = str(reports_dir / f"bale_report_batch_{batch.id}.xlsx")
+        update_fields.append("report_path")
+    batch.save(update_fields=update_fields)
+    _refresh_totals(batch)
+    write_report(batch, Path(batch.report_path))
+    batch.refresh_from_db()
+    return batch
+
+
+def process_excel_batch(
+    *,
+    batch: MessageBatch,
+    file_path: str,
+    sleep_seconds: float | None = None,
+    sheet_name: str | None = None,
+    skip_duplicates: bool = True,
+    report_path: str | None = None,
+    range_start: int | None = None,
+    range_end: int | None = None,
+) -> MessageBatch:
     batch.refresh_from_db(fields=["cancel_requested"])
     if batch.cancel_requested:
         batch.status = MessageBatch.Status.CANCELLED
@@ -322,6 +368,11 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
 
     try:
         recipients = read_excel_recipients(file_path, sheet_name=sheet_name)
+        if range_start is None:
+            range_start = batch.range_start
+        if range_end is None:
+            range_end = batch.range_end
+        recipients = _apply_data_range(recipients, range_start=range_start, range_end=range_end)
         if batch.limit:
             recipients = recipients[: batch.limit]
 
@@ -522,7 +573,21 @@ def send_single_recipient_test(*, first_name: str, last_name: str, phone: str, m
     return batch
 
 
-def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = True, limit: int | None = None, sleep_seconds: float | None = None, sheet_name: str | None = None, button_text: str | None = None, button_url: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
+def run_excel_batch(
+    *,
+    file_path: str,
+    message_template: str,
+    dry_run: bool = True,
+    limit: int | None = None,
+    sleep_seconds: float | None = None,
+    sheet_name: str | None = None,
+    button_text: str | None = None,
+    button_url: str | None = None,
+    skip_duplicates: bool = True,
+    report_path: str | None = None,
+    range_start: int | None = None,
+    range_end: int | None = None,
+) -> MessageBatch:
     batch = MessageBatch.objects.create(
         source_file_name=Path(file_path).name,
         message_template=message_template,
@@ -530,6 +595,8 @@ def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = Tr
         button_url=button_url or "",
         dry_run=dry_run,
         limit=limit,
+        range_start=range_start,
+        range_end=range_end,
     )
     return process_excel_batch(
         batch=batch,
@@ -538,4 +605,6 @@ def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = Tr
         sheet_name=sheet_name,
         skip_duplicates=skip_duplicates,
         report_path=report_path,
+        range_start=range_start,
+        range_end=range_end,
     )

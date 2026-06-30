@@ -10,6 +10,8 @@ class MessageBatchAdmin(admin.ModelAdmin):
         "dry_run",
         "status",
         "cancel_requested",
+        "range_start",
+        "range_end",
         "total_rows",
         "total_sent",
         "total_failed",

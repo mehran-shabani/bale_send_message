@@ -21,6 +21,18 @@ class UploadExcelForm(forms.Form):
     )
     send_mode = forms.ChoiceField(label="نوع اجرا", choices=SEND_MODES, initial="dry_run", widget=forms.RadioSelect)
     confirm_real_send = forms.BooleanField(label="تأیید می‌کنم ارسال واقعی انجام شود", required=False)
+    range_start = forms.IntegerField(
+        label="از ردیف داده",
+        required=False,
+        min_value=1,
+        help_text="ردیف ۱ یعنی اولین ردیف بعد از header اکسل.",
+    )
+    range_end = forms.IntegerField(
+        label="تا ردیف داده",
+        required=False,
+        min_value=1,
+        help_text="برای مثال ۱ تا ۱۰۰، سپس ۱۰۱ تا ۲۰۰.",
+    )
     limit = forms.IntegerField(label="محدودیت تعداد", required=False, min_value=1, help_text="برای تست، مثلاً ۵ بگذار.")
     sleep_seconds = forms.FloatField(label="فاصله بین ارسال‌ها / ثانیه", initial=settings.BALE_DEFAULT_SLEEP_SECONDS, min_value=0, required=False)
     skip_duplicates = forms.BooleanField(label="شماره‌های تکراری داخل فایل ارسال نشوند", initial=True, required=False)
@@ -60,6 +72,8 @@ class UploadExcelForm(forms.Form):
             self.add_error("excel_file", "برای پیش‌نمایش یا ارسال، فایل اکسل را انتخاب کن.")
         if self.validate_send_confirmation and data.get("send_mode") == "send" and not data.get("confirm_real_send"):
             raise forms.ValidationError("برای ارسال واقعی باید گزینه تأیید ارسال واقعی را فعال کنی.")
+        if data.get("range_start") and data.get("range_end") and data["range_end"] < data["range_start"]:
+            self.add_error("range_end", "عدد «تا ردیف داده» باید بزرگ‌تر یا مساوی «از ردیف داده» باشد.")
         if data.get("button_enabled") and not (data.get("button_text") and data.get("button_url")):
             raise forms.ValidationError("وقتی دکمه فعال است، متن دکمه و لینک دکمه باید پر باشند.")
         return data
