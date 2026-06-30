@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ارسال پیام بله{% endblock %}</title>
+  <style>
+    body{margin:0;background:#f5f7fb;color:#1f2937;font-family:tahoma,Arial,sans-serif;line-height:1.8}
+    .wrap{max-width:1120px;margin:auto;padding:24px}
+    .nav{background:#111827;color:white;padding:14px 24px;display:flex;gap:18px;align-items:center}
+    .nav a{color:white;text-decoration:none}.brand{font-weight:bold;font-size:18px;margin-left:auto}
+    .card{background:white;border-radius:18px;padding:22px;margin:18px 0;box-shadow:0 8px 28px #0001}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.stat{background:#f3f4f6;border-radius:14px;padding:14px}.stat b{display:block;font-size:24px}
+    label{font-weight:bold;display:block;margin-top:12px}input,textarea,select{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:12px;padding:10px;font-family:inherit}textarea{direction:rtl}.helptext{color:#6b7280;font-size:13px}
+    button,.btn{border:0;border-radius:12px;background:#2563eb;color:white;padding:11px 18px;text-decoration:none;display:inline-block;cursor:pointer;font-family:inherit}.btn.gray{background:#4b5563}.btn.green{background:#059669}
+    table{width:100%;border-collapse:collapse;background:white}th,td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:right;font-size:14px}th{background:#f9fafb}.messages{padding:0;list-style:none}.messages li{padding:12px;border-radius:12px;margin:10px 0}.success{background:#dcfce7}.error{background:#fee2e2}.warning{background:#fef3c7}.muted{color:#6b7280}.ltr{direction:ltr;text-align:left}
+  </style>
+</head>
+<body>
+  <div class="nav"><div class="brand">پنل ارسال پیام بله</div><a href="/">ارسال جدید</a><a href="/batches/">گزارش‌ها</a><a href="/admin/">ادمین</a></div>
+  <main class="wrap">
+    {% if messages %}<ul class="messages">{% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}</ul>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
