@@ -1,6 +1,8 @@
 from django import forms
 from django.conf import settings
 
+from .core import validate_message_template
+
 
 class UploadExcelForm(forms.Form):
     SEND_MODES = (
@@ -30,7 +32,20 @@ class UploadExcelForm(forms.Form):
         name = f.name.lower()
         if not name.endswith((".xlsx", ".xlsm")):
             raise forms.ValidationError("فقط فایل Excel با پسوند xlsx یا xlsm پذیرفته می‌شود.")
+
+        max_size_mb = getattr(settings, "BALE_MAX_UPLOAD_SIZE_MB", 10)
+        max_size_bytes = max_size_mb * 1024 * 1024
+        if f.size > max_size_bytes:
+            raise forms.ValidationError(f"حجم فایل اکسل نباید بیشتر از {max_size_mb} مگابایت باشد.")
         return f
+
+    def clean_message_template(self):
+        template = self.cleaned_data["message_template"]
+        try:
+            validate_message_template(template)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        return template
 
     def clean(self):
         data = super().clean()

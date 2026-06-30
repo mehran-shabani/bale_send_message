@@ -6,16 +6,20 @@ from time import sleep
 from uuid import uuid4
 import json
 import re
+import string
+from zipfile import BadZipFile
 
 import requests
 from django.conf import settings
 from django.db.models import Count
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 from .models import MessageBatch, MessageRecipient
 
 PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+ALLOWED_MESSAGE_PLACEHOLDERS = frozenset({"first_name", "last_name", "full_name", "phone"})
 
 
 @dataclass
@@ -53,25 +57,63 @@ def _clean_header(value: object) -> str:
     return str(value or "").strip().replace("ي", "ی").replace("ك", "ک")
 
 
-def _find_header(headers: list[str], candidates: set[str]) -> int:
+def _find_header(headers: list[str], candidates: set[str], title: str) -> int:
     for i, h in enumerate(headers):
         if h in candidates:
             return i
-    raise ValueError(f"ستون مورد نیاز پیدا نشد. ستون‌های فایل: {headers}")
+    visible_headers = "، ".join(h for h in headers if h) or "بدون عنوان"
+    accepted_headers = "، ".join(sorted(candidates))
+    raise ValueError(f"ستون «{title}» در فایل اکسل پیدا نشد. عنوان‌های قابل قبول برای این ستون: {accepted_headers}. ستون‌های موجود: {visible_headers}")
+
+
+def validate_message_template(template: str) -> None:
+    try:
+        parsed = list(string.Formatter().parse(template))
+    except ValueError as exc:
+        raise ValueError("قالب پیام نامعتبر است. اگر می‌خواهید آکولاد معمولی نمایش دهید از {{ و }} استفاده کنید.") from exc
+
+    invalid_fields: set[str] = set()
+    for _, field_name, format_spec, conversion in parsed:
+        if field_name is None:
+            continue
+        if format_spec or conversion:
+            raise ValueError("قالب پیام فقط placeholder ساده را می‌پذیرد؛ از format spec یا conversion استفاده نکنید.")
+        root_field = field_name.split(".", 1)[0].split("[", 1)[0]
+        if not root_field:
+            raise ValueError("قالب پیام نامعتبر است؛ placeholder خالی {} مجاز نیست.")
+        if root_field != field_name or root_field not in ALLOWED_MESSAGE_PLACEHOLDERS:
+            invalid_fields.add(field_name)
+
+    if invalid_fields:
+        allowed = "، ".join(f"{{{name}}}" for name in sorted(ALLOWED_MESSAGE_PLACEHOLDERS))
+        invalid = "، ".join(f"{{{name}}}" for name in sorted(invalid_fields))
+        raise ValueError(f"placeholderهای نامعتبر در متن پیام: {invalid}. فقط این موارد مجاز هستند: {allowed}.")
 
 
 def read_excel_recipients(file_path: str | Path, sheet_name: str | None = None) -> list[ExcelRecipient]:
-    wb = load_workbook(file_path, read_only=True, data_only=True)
-    ws = wb[sheet_name] if sheet_name else wb.active
+    try:
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+    except (InvalidFileException, BadZipFile, OSError) as exc:
+        raise ValueError("فایل اکسل قابل خواندن نیست. لطفاً یک فایل سالم با پسوند xlsx یا xlsm بارگذاری کنید.") from exc
+
+    try:
+        ws = wb[sheet_name] if sheet_name else wb.active
+    except KeyError as exc:
+        available_sheets = "، ".join(wb.sheetnames)
+        raise ValueError(f"شیت «{sheet_name}» در فایل اکسل پیدا نشد. شیت‌های موجود: {available_sheets}") from exc
+
     rows = ws.iter_rows(values_only=True)
     try:
         headers = [_clean_header(x) for x in next(rows)]
-    except StopIteration:
-        return []
+    except StopIteration as exc:
+        raise ValueError("فایل اکسل خالی است و ردیف header ندارد.") from exc
 
-    first_idx = _find_header(headers, {"نام", "اسم", "first_name"})
-    last_idx = _find_header(headers, {"نام خانوادگی", "فامیلی", "last_name"})
-    phone_idx = _find_header(headers, {"موبایل", "شماره موبایل", "شماره همراه", "mobile", "phone"})
+    if not any(headers):
+        raise ValueError("ردیف اول فایل اکسل باید header ستون‌ها باشد، اما خالی است.")
+
+    first_idx = _find_header(headers, {"نام", "اسم", "first_name"}, "نام")
+    last_idx = _find_header(headers, {"نام خانوادگی", "فامیلی", "last_name"}, "نام خانوادگی")
+    phone_idx = _find_header(headers, {"موبایل", "شماره موبایل", "شماره همراه", "mobile", "phone"}, "موبایل")
 
     result: list[ExcelRecipient] = []
     for row_number, row in enumerate(rows, start=2):
@@ -93,12 +135,16 @@ def read_excel_recipients(file_path: str | Path, sheet_name: str | None = None) 
 
 
 def render_message(template: str, recipient: ExcelRecipient) -> str:
-    return template.format(
-        first_name=recipient.first_name,
-        last_name=recipient.last_name,
-        full_name=recipient.full_name,
-        phone=recipient.normalized_phone or recipient.raw_phone,
-    )
+    validate_message_template(template)
+    try:
+        return template.format(
+            first_name=recipient.first_name,
+            last_name=recipient.last_name,
+            full_name=recipient.full_name,
+            phone=recipient.normalized_phone or recipient.raw_phone,
+        )
+    except (KeyError, ValueError) as exc:
+        raise ValueError("قالب پیام نامعتبر است و امکان ساخت متن پیام وجود ندارد.") from exc
 
 
 class BaleSafirClient:
