@@ -8,6 +8,7 @@ class MessageBatch(models.Model):
         RUNNING = "running", "در حال پردازش"
         FINISHED = "finished", "پایان‌یافته"
         FAILED = "failed", "ناموفق"
+        CANCELLED = "cancelled", "متوقف‌شده"
 
     source_file_name = models.CharField(max_length=255)
     message_template = models.TextField()
@@ -25,6 +26,7 @@ class MessageBatch(models.Model):
     total_payment_required = models.PositiveIntegerField(default=0)
     total_config_error = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    cancel_requested = models.BooleanField(default=False)
     error_message = models.TextField(blank=True)
     report_path = models.CharField(max_length=500, blank=True)
     started_at = models.DateTimeField(default=timezone.now)

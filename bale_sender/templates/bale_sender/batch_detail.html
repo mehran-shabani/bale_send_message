@@ -2,6 +2,14 @@
 {% block title %}گزارش ارسال{% endblock %}
 {% block page_title %}گزارش ارسال #{{ batch.id }}{% endblock %}
 {% block top_actions %}
+  {% if batch.status == "pending" or batch.status == "running" %}
+    {% if not batch.cancel_requested %}
+      <form method="post" action="{% url 'bale_cancel_batch' batch.id %}" style="display:inline">
+        {% csrf_token %}
+        <button class="danger" type="submit">توقف پردازش</button>
+      </form>
+    {% endif %}
+  {% endif %}
   {% if batch.report_path %}<a class="btn green" href="{% url 'bale_download_report' batch.id %}">Excel کامل همین گزارش</a>{% endif %}
   <a class="btn ghost" href="{% url 'bale_dashboard' %}">ارسال جدید</a>
   <a class="btn ghost" href="{% url 'bale_batch_list' %}">همه گزارش‌ها</a>
@@ -29,8 +37,16 @@
   {% if batch.status == "pending" or batch.status == "running" %}
     <div class="alert alert-info">پردازش در حال انجام است و صفحه خودکار به‌روزرسانی می‌شود.</div>
   {% endif %}
+  {% if batch.cancel_requested %}
+    {% if batch.status == "pending" or batch.status == "running" %}
+      <div class="alert alert-danger">درخواست توقف ثبت شده است. پردازش بعد از ارسال فعلی متوقف می‌شود.</div>
+    {% endif %}
+  {% endif %}
   {% if batch.status == "failed" %}
     <div class="alert alert-danger">{{ batch.error_message|default:"پردازش با خطا متوقف شد." }}</div>
+  {% endif %}
+  {% if batch.status == "cancelled" %}
+    <div class="alert alert-danger">{{ batch.error_message|default:"پردازش متوقف شد." }}</div>
   {% endif %}
 
   <section class="card">

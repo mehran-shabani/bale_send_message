@@ -261,6 +261,21 @@ def batch_detail(request, batch_id):
     )
 
 
+def cancel_batch(request, batch_id):
+    if request.method != "POST":
+        raise Http404("مسیر توقف فقط با درخواست معتبر قابل استفاده است.")
+
+    batch = get_object_or_404(MessageBatch, pk=batch_id)
+    if batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING}:
+        batch.cancel_requested = True
+        batch.error_message = "درخواست توقف ثبت شد. اگر ارسال فعلی در حال انجام باشد، بعد از پایان همان ارسال متوقف می‌شود."
+        batch.save(update_fields=["cancel_requested", "error_message"])
+        messages.warning(request, "درخواست توقف ثبت شد.")
+    else:
+        messages.info(request, "این پردازش دیگر در حال اجرا نیست.")
+    return redirect("bale_batch_detail", batch_id=batch.id)
+
+
 def download_report(request, batch_id):
     batch = get_object_or_404(MessageBatch, pk=batch_id)
     if not batch.report_path:

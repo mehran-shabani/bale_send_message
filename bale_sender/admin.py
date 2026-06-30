@@ -8,6 +8,8 @@ class MessageBatchAdmin(admin.ModelAdmin):
         "id",
         "source_file_name",
         "dry_run",
+        "status",
+        "cancel_requested",
         "total_rows",
         "total_sent",
         "total_failed",
@@ -17,6 +19,7 @@ class MessageBatchAdmin(admin.ModelAdmin):
         "started_at",
         "finished_at",
     )
+    list_filter = ("status", "dry_run", "cancel_requested", "started_at")
     readonly_fields = ("started_at", "finished_at")
 
 

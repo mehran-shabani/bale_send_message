@@ -282,7 +282,20 @@ def _refresh_totals(batch: MessageBatch, *, mark_finished: bool = False) -> None
     batch.save(update_fields=update_fields)
 
 
+def _is_cancel_requested(batch: MessageBatch) -> bool:
+    batch.refresh_from_db(fields=["cancel_requested"])
+    return batch.cancel_requested
+
+
 def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: float | None = None, sheet_name: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
+    batch.refresh_from_db(fields=["cancel_requested"])
+    if batch.cancel_requested:
+        batch.status = MessageBatch.Status.CANCELLED
+        batch.error_message = "پردازش قبل از شروع با درخواست کاربر متوقف شد."
+        batch.finished_at = timezone.now()
+        batch.save(update_fields=["status", "error_message", "finished_at"])
+        return batch
+
     batch.status = MessageBatch.Status.RUNNING
     batch.error_message = ""
     batch.finished_at = None
@@ -309,7 +322,12 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
                 MessageRecipient.objects.bulk_create(pending_bulk_recipients, batch_size=1000)
                 pending_bulk_recipients.clear()
 
+        cancelled = False
         for item in recipients:
+            if _is_cancel_requested(batch):
+                cancelled = True
+                break
+
             final_text = render_message(batch.message_template, item)
             obj = MessageRecipient(
                 batch=batch,
@@ -381,7 +399,12 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
         batch.save(update_fields=["report_path"])
         write_report(batch, Path(report_path))
         _refresh_totals(batch)
-        if not batch.dry_run and (batch.total_failed or batch.total_config_error):
+        if cancelled or batch.cancel_requested:
+            batch.status = MessageBatch.Status.CANCELLED
+            batch.error_message = "پردازش با درخواست کاربر متوقف شد. گزارش شامل ردیف‌هایی است که تا قبل از توقف پردازش شده‌اند."
+            batch.finished_at = timezone.now()
+            batch.save(update_fields=["status", "error_message", "finished_at"])
+        elif not batch.dry_run and (batch.total_failed or batch.total_config_error):
             batch.status = MessageBatch.Status.FAILED
             batch.error_message = "پردازش کامل شد، اما بخشی از ارسال‌ها به دلیل خطای API یا تنظیمات ناموفق بود. جزئیات ردیف‌ها را بررسی کن."
             batch.finished_at = timezone.now()

@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
-from .core import BaleSafirClient, ExcelRecipient, build_excel_preview, normalize_iran_mobile, read_excel_recipients, render_message, run_excel_batch, send_single_recipient_test
+from .core import BaleSafirClient, ExcelRecipient, build_excel_preview, normalize_iran_mobile, process_excel_batch, read_excel_recipients, render_message, run_excel_batch, send_single_recipient_test
 from .forms import SingleMessageTestForm, UploadExcelForm
 from .models import MessageBatch, MessageRecipient
 
@@ -197,6 +197,34 @@ class BatchTests(TestCase):
         self.assertEqual(batch.total_sent, 1)
         self.assertEqual(batch.recipients.get().final_text, "سلام علی رضایی")
 
+    @patch("bale_sender.core.BaleSafirClient.send")
+    def test_running_batch_can_be_cancelled_between_sends(self, send_mock):
+        report = Path(tempfile.mkdtemp()) / "cancelled.xlsx"
+        batch = MessageBatch.objects.create(
+            source_file_name="sample.xlsx",
+            message_template="سلام {full_name}",
+            dry_run=False,
+        )
+
+        def request_cancel(**kwargs):
+            MessageBatch.objects.filter(pk=batch.pk).update(cancel_requested=True)
+            return {"status": MessageRecipient.Status.SENT, "http_status": 200, "api_message": "ok"}
+
+        send_mock.side_effect = request_cancel
+
+        process_excel_batch(
+            batch=batch,
+            file_path=str(self.make_excel()),
+            sleep_seconds=0,
+            report_path=str(report),
+        )
+
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, MessageBatch.Status.CANCELLED)
+        self.assertTrue(batch.cancel_requested)
+        self.assertEqual(batch.total_rows, 1)
+        self.assertTrue(report.exists())
+
 
 class ReportViewTests(TestCase):
     def make_batch_with_recipients(self, count=105):
@@ -240,3 +268,17 @@ class ReportViewTests(TestCase):
         rows = list(wb.active.iter_rows(values_only=True))
         self.assertEqual(len(rows), 3)
         self.assertEqual(rows[0][0], "شناسه گزارش")
+
+    def test_cancel_batch_view_marks_running_batch_for_stop(self):
+        batch = MessageBatch.objects.create(
+            source_file_name="sample.xlsx",
+            message_template="سلام",
+            status=MessageBatch.Status.RUNNING,
+        )
+
+        response = self.client.post(reverse("bale_cancel_batch", args=[batch.id]))
+
+        self.assertRedirects(response, reverse("bale_batch_detail", args=[batch.id]))
+        batch.refresh_from_db()
+        self.assertTrue(batch.cancel_requested)
+        self.assertIn("درخواست توقف", batch.error_message)
