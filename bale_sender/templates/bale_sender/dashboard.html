@@ -3,7 +3,17 @@
 {% block content %}
 <div class="card">
   <h2>ارسال پیام از فایل Excel</h2>
-  <p class="muted">ستون‌های لازم: <b>نام</b>، <b>نام خانوادگی</b>، <b>موبایل</b>. بعد از ثبت فایل سریع به صفحه جزئیات batch هدایت می‌شوی و پردازش در پس‌زمینه ادامه پیدا می‌کند.</p>
+  <p class="muted">بعد از ثبت فایل سریع به صفحه جزئیات batch هدایت می‌شوی و پردازش در پس‌زمینه ادامه پیدا می‌کند.</p>
+  <div class="helptext">
+    <p><b>فرمت فایل Excel:</b> ردیف اول باید header باشد و حداقل این ستون‌ها را داشته باشد:</p>
+    <ul>
+      <li>ستون نام: یکی از <code>نام</code>، <code>اسم</code>، <code>first_name</code></li>
+      <li>ستون نام خانوادگی: یکی از <code>نام خانوادگی</code>، <code>فامیلی</code>، <code>last_name</code></li>
+      <li>ستون موبایل: یکی از <code>موبایل</code>، <code>شماره موبایل</code>، <code>شماره همراه</code>، <code>mobile</code>، <code>phone</code></li>
+    </ul>
+    <p><b>نمونه header قابل قبول:</b> <code>نام | نام خانوادگی | موبایل</code></p>
+    <p><b>placeholderهای مجاز متن پیام:</b> <code>{first_name}</code>، <code>{last_name}</code>، <code>{full_name}</code>، <code>{phone}</code></p>
+  </div>
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {{ form.non_field_errors }}

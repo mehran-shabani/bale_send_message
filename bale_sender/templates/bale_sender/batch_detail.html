@@ -34,7 +34,7 @@
   <table>
     <tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>HTTP</th><th>کد API</th><th>پیام/خطا</th></tr>
     {% for r in recipients %}
-      <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td>{{ r.status }}</td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
+      <tr><td>{{ r.row_number }}</td><td>{{ r.full_name }}</td><td class="ltr">{{ r.normalized_phone }}</td><td>{{ r.get_status_display }}</td><td>{{ r.http_status|default:"" }}</td><td>{{ r.api_code }}</td><td>{{ r.api_message }} {{ r.error_message }}</td></tr>
     {% empty %}<tr><td colspan="7">ردیفی وجود ندارد.</td></tr>{% endfor %}
   </table>
 </div>

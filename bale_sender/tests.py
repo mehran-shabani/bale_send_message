@@ -2,10 +2,12 @@ from pathlib import Path
 import tempfile
 from unittest.mock import Mock, patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from openpyxl import Workbook
 
-from .core import BaleSafirClient, normalize_iran_mobile, read_excel_recipients, run_excel_batch
+from .core import BaleSafirClient, ExcelRecipient, normalize_iran_mobile, read_excel_recipients, render_message, run_excel_batch
+from .forms import UploadExcelForm
 from .models import MessageRecipient
 
 
@@ -38,6 +40,46 @@ class ExcelTests(TestCase):
         self.assertEqual(rows[0].full_name, "علی رضایی")
         self.assertEqual(rows[0].normalized_phone, TEST_PHONE_STD)
         self.assertIsNone(rows[1].normalized_phone)
+
+    def test_read_recipients_invalid_sheet_message(self):
+        with self.assertRaisesMessage(ValueError, "شیت «missing» در فایل اکسل پیدا نشد"):
+            read_excel_recipients(self.make_excel(), sheet_name="missing")
+
+    def test_read_recipients_missing_required_column_message(self):
+        tmp = Path(tempfile.mkdtemp()) / "missing.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["نام", "موبایل"])
+        wb.save(tmp)
+
+        with self.assertRaisesMessage(ValueError, "ستون «نام خانوادگی»"):
+            read_excel_recipients(tmp)
+
+    def test_read_recipients_empty_header_message(self):
+        tmp = Path(tempfile.mkdtemp()) / "empty_header.xlsx"
+        wb = Workbook()
+        wb.active.append([None, None, None])
+        wb.save(tmp)
+
+        with self.assertRaisesMessage(ValueError, "ردیف اول فایل اکسل باید header"):
+            read_excel_recipients(tmp)
+
+
+class MessageTemplateTests(TestCase):
+    def test_render_message_allows_only_known_placeholders(self):
+        recipient = ExcelRecipient(2, "علی", "رضایی", TEST_PHONE_LOCAL, TEST_PHONE_STD)
+        self.assertEqual(render_message("سلام {full_name} {phone}", recipient), f"سلام علی رضایی {TEST_PHONE_STD}")
+
+        with self.assertRaisesMessage(ValueError, "placeholderهای نامعتبر"):
+            render_message("سلام {unknown}", recipient)
+
+    def test_form_rejects_invalid_template_and_large_file(self):
+        upload = SimpleUploadedFile("sample.xlsx", b"x" * 6)
+        with override_settings(BALE_MAX_UPLOAD_SIZE_MB=0):
+            form = UploadExcelForm(data={"message_template": "سلام {unknown}", "send_mode": "dry_run"}, files={"excel_file": upload})
+            self.assertFalse(form.is_valid())
+            self.assertIn("message_template", form.errors)
+            self.assertIn("excel_file", form.errors)
 
 
 class SafirClientTests(TestCase):
