@@ -165,7 +165,7 @@ def write_report(batch: MessageBatch, report_path: Path) -> None:
 
 
 def _refresh_totals(batch: MessageBatch, *, mark_finished: bool = False) -> None:
-    counts = dict(batch.recipients.values("status").annotate(c=Count("id")).values_list("status", "c"))
+    counts = dict(batch.recipients.order_by().values("status").annotate(c=Count("id")).values_list("status", "c"))
     batch.total_rows = sum(counts.values())
     batch.total_sent = counts.get(MessageRecipient.Status.SENT, 0)
     batch.total_failed = counts.get(MessageRecipient.Status.FAILED, 0)
