@@ -257,6 +257,19 @@ class ReportViewTests(TestCase):
         self.assertEqual(len(response.context["recipients"]), 100)
         self.assertEqual(response.context["recipients"][0].row_number, 105)
 
+
+    def test_batch_live_status_returns_last_ten_rows(self):
+        batch = self.make_batch_with_recipients(count=12)
+
+        response = self.client.get(reverse("bale_batch_live_status", args=[batch.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["batch"]["id"], batch.id)
+        self.assertEqual(len(payload["recent_recipients"]), 10)
+        self.assertEqual(payload["recent_recipients"][0]["row_number"], 12)
+        self.assertIn("status_label", payload["recent_recipients"][0])
+
     def test_recent_recipients_excel_report_limit(self):
         self.make_batch_with_recipients(count=3)
 

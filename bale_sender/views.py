@@ -10,7 +10,7 @@ from django.core.paginator import Paginator
 from django.core import signing
 from django.db import close_old_connections, transaction
 from django.db.models import Count
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from openpyxl import Workbook
@@ -260,6 +260,46 @@ def batch_detail(request, batch_id):
         },
     )
 
+
+def batch_live_status(request, batch_id):
+    batch = get_object_or_404(MessageBatch, pk=batch_id)
+    recent_recipients = (
+        batch.recipients.order_by("-created_at", "-id")[:10]
+    )
+    stats = _batch_stats(batch)
+    return JsonResponse(
+        {
+            "batch": {
+                "id": batch.id,
+                "status": batch.status,
+                "status_label": batch.get_status_display(),
+                "cancel_requested": batch.cancel_requested,
+                "is_active": batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING},
+                "total_rows": sum(stats.values()),
+                "total_sent": stats[MessageRecipient.Status.SENT],
+                "total_failed": stats[MessageRecipient.Status.FAILED],
+                "total_invalid": stats[MessageRecipient.Status.INVALID_PHONE],
+                "total_duplicate": stats[MessageRecipient.Status.DUPLICATE],
+                "total_not_bale_user": stats[MessageRecipient.Status.NOT_BALE_USER],
+                "total_rate_limited": stats[MessageRecipient.Status.RATE_LIMITED],
+                "total_payment_required": stats[MessageRecipient.Status.PAYMENT_REQUIRED],
+                "total_config_error": stats[MessageRecipient.Status.CONFIG_ERROR],
+            },
+            "recent_recipients": [
+                {
+                    "row_number": r.row_number,
+                    "full_name": r.full_name,
+                    "normalized_phone": r.normalized_phone,
+                    "status": r.status,
+                    "status_label": r.get_status_display(),
+                    "http_status": r.http_status or "",
+                    "api_code": r.api_code,
+                    "message": " ".join(x for x in [r.api_message, r.error_message] if x),
+                }
+                for r in recent_recipients
+            ],
+        }
+    )
 
 def cancel_batch(request, batch_id):
     if request.method != "POST":

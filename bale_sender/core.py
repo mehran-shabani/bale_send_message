@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 from uuid import uuid4
 import json
 import re
@@ -287,6 +287,25 @@ def _is_cancel_requested(batch: MessageBatch) -> bool:
     return batch.cancel_requested
 
 
+def _sleep_until_cancel_or_timeout(batch: MessageBatch, seconds: float) -> bool:
+    """Sleep in small chunks and return True if cancellation was requested."""
+    if seconds <= 0:
+        return _is_cancel_requested(batch)
+
+    remaining = seconds
+    last_check = 0.0
+    while remaining > 0:
+        now = monotonic()
+        if now - last_check >= 1.0:
+            if _is_cancel_requested(batch):
+                return True
+            last_check = now
+        chunk = min(0.2, remaining)
+        sleep(chunk)
+        remaining -= chunk
+    return _is_cancel_requested(batch)
+
+
 def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: float | None = None, sheet_name: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
     batch.refresh_from_db(fields=["cancel_requested"])
     if batch.cancel_requested:
@@ -388,8 +407,9 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
                     "sent_at",
                 ]
             )
-            if delay:
-                sleep(delay)
+            if _sleep_until_cancel_or_timeout(batch, delay or 0.0):
+                cancelled = True
+                break
 
         flush_bulk_recipients()
         if not report_path:
