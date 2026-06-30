@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}پنل ارسال پیام بله{% endblock %}</title>
+  <style>
+    :root{
+      --bg:#f6f7f9;--surface:#fff;--surface-2:#f9fafb;--text:#18202a;--muted:#667085;
+      --border:#d9dee7;--border-soft:#edf0f4;--primary:#2454d6;--primary-2:#193da0;
+      --green:#087f5b;--red:#c92a2a;--yellow:#b7791f;--cyan:#0b7285;--shadow:0 10px 28px rgba(16,24,40,.07)
+    }
+    *{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{margin:0;background:var(--bg);color:var(--text);font-family:tahoma,Arial,sans-serif;font-size:14px;line-height:1.75}
+    a{color:inherit;text-decoration:none}code{direction:ltr;display:inline-block;background:#eef2ff;color:#233876;border-radius:6px;padding:0 6px;font-family:Consolas,monospace}
+    .app-shell{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}
+    .sidebar{position:sticky;top:0;height:100vh;background:#101828;color:#fff;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
+    .brand{padding:10px 8px 18px;border-bottom:1px solid rgba(255,255,255,.12)}.brand-title{font-weight:800;font-size:18px}.brand-sub{color:#b8c0cc;font-size:12px;margin-top:3px}
+    .nav{display:grid;gap:6px}.nav a{display:flex;align-items:center;justify-content:space-between;border-radius:8px;color:#d6dce7;padding:10px 12px;font-weight:700}
+    .nav a:hover,.nav a.active{background:#fff;color:#101828}.nav a span{color:#98a2b3;font-weight:400}.nav a.active span,.nav a:hover span{color:#667085}
+    .main,.content,.layout,.layout>*,.stack,.card{min-width:0}.topbar{height:64px;min-width:0;background:rgba(255,255,255,.86);border-bottom:1px solid var(--border-soft);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:5}
+    .topbar h1{font-size:20px;margin:0}.top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.content{max-width:1180px;margin:0 auto;padding:24px 28px 42px}
+    .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.page-head h2{margin:0;font-size:24px}.page-head p{margin:4px 0 0;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px}.stack{display:grid;gap:16px}.card{background:var(--surface);border:1px solid var(--border-soft);border-radius:8px;box-shadow:var(--shadow);padding:18px}.card.compact{padding:14px}.card h2,.card h3{margin:0 0 12px}.card h2{font-size:18px}.card h3{font-size:15px}
+    .section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.step{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:#eef2ff;color:var(--primary);font-weight:800;margin-left:8px}
+    .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.form-grid.one{grid-template-columns:1fr}.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+    label,legend{display:block;font-weight:800;margin:0 0 7px}input,textarea,select{width:100%;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);padding:10px 11px;font:inherit;outline:none}
+    textarea{min-height:150px;resize:vertical;direction:rtl}input:focus,textarea:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(36,84,214,.12)}
+    input[type="checkbox"],input[type="radio"]{width:auto;margin:0 0 0 8px}.field{min-width:0}.helptext{color:var(--muted);font-size:12px;margin-top:4px}
+    #id_send_mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}#id_send_mode>div{border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2)}#id_send_mode label{margin:0;font-weight:700}
+    .checkline label,.danger-zone label{display:inline-flex;align-items:center;margin:0}.danger-zone{border:1px solid #fecaca;background:#fff5f5;border-radius:8px;padding:12px}.errorlist{margin:8px 0;padding:10px 14px;border:1px solid #fecaca;border-radius:8px;background:#fff5f5;color:#9b1c1c;list-style:none}
+    .actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}.btn,button{border:0;border-radius:8px;background:var(--primary);color:#fff;padding:10px 15px;font:inherit;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;min-height:42px}
+    .btn:hover,button:hover{background:var(--primary-2)}.btn.secondary,button.secondary{background:#344054}.btn.ghost,button.ghost{background:#fff;color:#344054;border:1px solid var(--border)}.btn.green,button.green{background:var(--green)}.btn.danger,button.danger{background:var(--red)}
+    .quick-guide{display:grid;gap:10px}.guide-item{border:1px solid var(--border-soft);background:var(--surface-2);border-radius:8px;padding:12px}.guide-item b{display:block;margin-bottom:4px}.muted{color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat{border:1px solid var(--border-soft);background:var(--surface-2);border-radius:8px;padding:12px}.stat span{color:var(--muted);font-size:12px}.stat b{display:block;font-size:23px;margin-top:2px}.stat-success{background:#ebfbee}.stat-error{background:#fff5f5}.stat-warning{background:#fff9db}.stat-muted{background:#e7f5ff}
+    .alert{border:1px solid var(--border);border-radius:8px;padding:11px 12px;margin:12px 0;background:#fff}.alert-danger{background:#fff5f5;border-color:#fecaca;color:#9b1c1c}.alert-info{background:#eef6ff;border-color:#bfdbfe;color:#1d4ed8}.messages{padding:0;margin:0 0 16px;list-style:none}.messages li{border-radius:8px;padding:12px 14px;margin-bottom:8px;border:1px solid var(--border)}.success{background:#ebfbee}.warning{background:#fff9db}.error{background:#fff5f5}
+    .table-wrap{width:100%;min-width:0;max-width:100%;overflow:auto;border:1px solid var(--border-soft);border-radius:8px;background:#fff}.table-wrap table{min-width:760px}.table-wrap.mini-table table{min-width:0}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--border-soft);padding:10px;text-align:right;vertical-align:top}th{background:#f8fafc;color:#475467;font-size:12px}td{font-size:13px}.table-wrap tr:last-child td{border-bottom:0}.table-wrap td:last-child{white-space:normal;min-width:190px;overflow-wrap:anywhere}.mini-table td:last-child{min-width:0}
+    .badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800;white-space:nowrap;border:1px solid transparent}.badge-success,.badge-finished,.badge-sent,.badge-ok{background:#d3f9d8;color:#0b6b43;border-color:#b2f2bb}.badge-error,.badge-failed,.badge-invalid_phone,.badge-config_error{background:#ffe3e3;color:#9b1c1c;border-color:#ffc9c9}.badge-warning,.badge-running,.badge-rate_limited,.badge-payment_required{background:#fff3bf;color:#8a5a00;border-color:#ffec99}.badge-muted,.badge-pending,.badge-dry_run,.badge-duplicate,.badge-not_bale_user{background:#dff6ff;color:#075985;border-color:#bae6fd}
+    .ltr{direction:ltr;text-align:left}.empty-state{padding:26px;text-align:center;color:var(--muted)}
+    @media (max-width:960px){.app-shell{display:block}.sidebar{height:auto;position:static}.nav{grid-template-columns:repeat(3,minmax(0,1fr))}.topbar{position:static;padding:0 16px}.content{padding:18px 16px 32px}.layout{grid-template-columns:1fr}.page-head{display:block}.form-grid,.form-grid.three{grid-template-columns:1fr}}
+    @media (max-width:560px){.nav{grid-template-columns:1fr}.topbar{height:auto;padding:14px 16px;display:block}.top-actions{margin-top:10px}.card{padding:14px}#id_send_mode{grid-template-columns:1fr}.actions .btn,.actions button{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">پنل ارسال بله</div>
+        <div class="brand-sub">مدیریت ارسال و گزارش‌ها</div>
+      </div>
+      <nav class="nav">
+        <a class="{% if request.resolver_match.url_name == 'bale_dashboard' %}active{% endif %}" href="{% url 'bale_dashboard' %}">ارسال اکسل <span>Excel</span></a>
+        <a class="{% if request.resolver_match.url_name == 'bale_single_test' %}active{% endif %}" href="{% url 'bale_single_test' %}">تست تک‌نفره <span>Test</span></a>
+        <a class="{% if request.resolver_match.url_name == 'bale_batch_list' or request.resolver_match.url_name == 'bale_batch_detail' %}active{% endif %}" href="{% url 'bale_batch_list' %}">گزارش‌ها <span>Logs</span></a>
+        <a href="/admin/">ادمین <span>Admin</span></a>
+      </nav>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <h1>{% block page_title %}پنل ارسال پیام{% endblock %}</h1>
+        <div class="top-actions">{% block top_actions %}{% endblock %}</div>
+      </header>
+      <main class="content">
+        {% if messages %}<ul class="messages">{% for message in messages %}<li class="{{ message.tags }}">{{ message }}</li>{% endfor %}</ul>{% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

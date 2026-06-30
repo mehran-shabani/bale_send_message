@@ -1,0 +1,98 @@
+{% extends "bale_sender/base.html" %}
+{% block title %}تست تک‌نفره{% endblock %}
+{% block page_title %}ارسال تست تک‌نفره{% endblock %}
+{% block top_actions %}
+  <a class="btn ghost" href="{% url 'bale_dashboard' %}">ارسال اکسل</a>
+  <a class="btn ghost" href="{% url 'bale_batch_list' %}">گزارش‌ها</a>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>تست واقعی روی یک شماره</h2>
+    <p>نتیجه این ارسال در گزارش‌ها ثبت می‌شود.</p>
+  </div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="layout">
+    <div class="stack">
+      <section class="card">
+        <div class="section-title">
+          <h2><span class="step">۱</span>گیرنده تست</h2>
+        </div>
+        <div class="form-grid three">
+          <div class="field">
+            {{ form.first_name.label_tag }}
+            {{ form.first_name }}
+            {% for error in form.first_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.last_name.label_tag }}
+            {{ form.last_name }}
+            {% for error in form.last_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.phone.label_tag }}
+            {{ form.phone }}
+            {% if form.phone.help_text %}<div class="helptext">{{ form.phone.help_text }}</div>{% endif %}
+            {% for error in form.phone.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <h2><span class="step">۲</span>متن پیام</h2>
+        </div>
+        <div class="form-grid one">
+          <div class="field">
+            {{ form.message_template.label_tag }}
+            {{ form.message_template }}
+            {% if form.message_template.help_text %}<div class="helptext">{{ form.message_template.help_text }}</div>{% endif %}
+            {% for error in form.message_template.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title">
+          <h2><span class="step">۳</span>دکمه پیام</h2>
+        </div>
+        <div class="form-grid">
+          <div class="field checkline">
+            {{ form.button_enabled.label_tag }}
+            {{ form.button_enabled }}
+            {% for error in form.button_enabled.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.button_text.label_tag }}
+            {{ form.button_text }}
+            {% for error in form.button_text.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.button_url.label_tag }}
+            {{ form.button_url }}
+            {% for error in form.button_url.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          </div>
+        </div>
+        <div class="actions">
+          <button class="green" type="submit">ارسال تست واقعی</button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="stack">
+      <section class="card compact">
+        <h3>چک سریع</h3>
+        <div class="quick-guide">
+          <div class="guide-item"><b>شماره</b><span class="muted">فرمت ۰۹ یا ۹۸ پذیرفته می‌شود.</span></div>
+          <div class="guide-item"><b>نتیجه</b><span class="muted">بعد از ارسال، صفحه گزارش باز می‌شود.</span></div>
+          <div class="guide-item"><b>گروهی</b><a class="btn ghost" href="{% url 'bale_dashboard' %}" style="margin-top:8px">ارسال از اکسل</a></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</form>
+{% endblock %}

@@ -1,10 +1,12 @@
 from pathlib import Path
+from io import BytesIO
 import tempfile
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
-from openpyxl import Workbook
+from django.urls import reverse
+from openpyxl import Workbook, load_workbook
 
 from .core import BaleSafirClient, ExcelRecipient, build_excel_preview, normalize_iran_mobile, read_excel_recipients, render_message, run_excel_batch, send_single_recipient_test
 from .forms import SingleMessageTestForm, UploadExcelForm
@@ -194,3 +196,47 @@ class BatchTests(TestCase):
         self.assertEqual(batch.total_rows, 1)
         self.assertEqual(batch.total_sent, 1)
         self.assertEqual(batch.recipients.get().final_text, "سلام علی رضایی")
+
+
+class ReportViewTests(TestCase):
+    def make_batch_with_recipients(self, count=105):
+        batch = MessageBatch.objects.create(source_file_name="sample.xlsx", message_template="سلام {full_name}")
+        MessageRecipient.objects.bulk_create(
+            [
+                MessageRecipient(
+                    batch=batch,
+                    row_number=i,
+                    first_name=f"نام {i}",
+                    last_name="تست",
+                    full_name=f"نام {i} تست",
+                    raw_phone=TEST_PHONE_LOCAL,
+                    normalized_phone=TEST_PHONE_STD,
+                    status=MessageRecipient.Status.DRY_RUN,
+                    final_text=f"سلام نام {i} تست",
+                )
+                for i in range(1, count + 1)
+            ]
+        )
+        return batch
+
+    def test_batch_detail_uses_paginated_recent_rows(self):
+        batch = self.make_batch_with_recipients()
+
+        response = self.client.get(reverse("bale_batch_detail", args=[batch.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_recipients"], 105)
+        self.assertEqual(len(response.context["recipients"]), 100)
+        self.assertEqual(response.context["recipients"][0].row_number, 105)
+
+    def test_recent_recipients_excel_report_limit(self):
+        self.make_batch_with_recipients(count=3)
+
+        response = self.client.get(reverse("bale_recent_recipients_report"), {"limit": 2})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("bale_recent_2_recipients.xlsx", response["Content-Disposition"])
+        wb = load_workbook(BytesIO(response.content), read_only=True)
+        rows = list(wb.active.iter_rows(values_only=True))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0][0], "شناسه گزارش")

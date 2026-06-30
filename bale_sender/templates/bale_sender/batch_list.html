@@ -1,21 +1,67 @@
 {% extends "bale_sender/base.html" %}
 {% block title %}گزارش‌ها{% endblock %}
+{% block page_title %}گزارش‌ها{% endblock %}
+{% block top_actions %}
+  <a class="btn ghost" href="{% url 'bale_dashboard' %}">ارسال اکسل</a>
+  <a class="btn ghost" href="{% url 'bale_single_test' %}">تست تک‌نفره</a>
+  <a class="btn green" href="{% url 'bale_recent_recipients_report' %}?limit=1000">Excel آخرین ۱۰۰۰ ارسال</a>
+{% endblock %}
 {% block content %}
-<div class="card">
-  <h2>همه گزارش‌ها</h2>
-  <div class="table-wrap">
-    <table>
-      <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>نامعتبر</th><th>تکراری</th><th>کاربر بله نیست</th><th>زمان</th></tr>
-      {% for b in batches %}
-        <tr>
-          <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
-          <td>{{ b.source_file_name }}</td>
-          <td>{% if b.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}</td>
-          <td><span class="badge badge-{{ b.status }}">{{ b.get_status_display }}</span></td>
-          <td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_invalid }}</td><td>{{ b.total_duplicate }}</td><td>{{ b.total_not_bale_user }}</td><td>{{ b.started_at }}</td>
-        </tr>
-      {% empty %}<tr><td colspan="10">هنوز گزارشی ثبت نشده است.</td></tr>{% endfor %}
-    </table>
+<div class="page-head">
+  <div>
+    <h2>همه گزارش‌ها</h2>
+    <p>آخرین ۱۰۰ پردازش ثبت‌شده.</p>
   </div>
+</div>
+
+<div class="stack">
+  <section class="card">
+    <div class="section-title">
+      <h2>خروجی Excel</h2>
+      <span class="muted">از کل ارسال‌های ثبت‌شده</span>
+    </div>
+    <form method="get" action="{% url 'bale_recent_recipients_report' %}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="recent-report-limit">تعداد آخرین ارسال‌ها</label>
+          <input id="recent-report-limit" type="number" name="limit" value="1000" min="1" max="10000">
+          <div class="helptext">برای نمونه ۱۰۰۰ یعنی آخرین ۱۰۰۰ ردیف ارسال‌شده در همه گزارش‌ها.</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="green" type="submit">دانلود گزارش Excel</button>
+        <a class="btn ghost" href="{% url 'bale_recent_recipients_report' %}?limit=100">Excel آخرین ۱۰۰</a>
+        <a class="btn ghost" href="{% url 'bale_recent_recipients_report' %}?limit=1000">Excel آخرین ۱۰۰۰</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="section-title">
+      <h2>پردازش‌ها</h2>
+      <span class="muted">برای گزارش کامل هر فایل وارد جزئیات همان ردیف شو.</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>وضعیت</th><th>کل</th><th>موفق</th><th>نامعتبر</th><th>تکراری</th><th>کاربر بله نیست</th><th>زمان</th></tr>
+        {% for b in batches %}
+          <tr>
+            <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
+            <td>{{ b.source_file_name }}</td>
+            <td>{% if b.dry_run %}<span class="badge badge-muted">تست بدون ارسال</span>{% else %}<span class="badge badge-warning">ارسال واقعی</span>{% endif %}</td>
+            <td><span class="badge badge-{{ b.status }}">{{ b.get_status_display }}</span></td>
+            <td>{{ b.total_rows }}</td>
+            <td>{{ b.total_sent }}</td>
+            <td>{{ b.total_invalid }}</td>
+            <td>{{ b.total_duplicate }}</td>
+            <td>{{ b.total_not_bale_user }}</td>
+            <td>{{ b.started_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="10" class="empty-state">هنوز گزارشی ثبت نشده است.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </section>
 </div>
 {% endblock %}
