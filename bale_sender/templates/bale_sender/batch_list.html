@@ -1,0 +1,18 @@
+{% extends "bale_sender/base.html" %}
+{% block title %}گزارش‌ها{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>همه گزارش‌ها</h2>
+  <table>
+    <tr><th>شناسه</th><th>فایل</th><th>حالت</th><th>کل</th><th>موفق</th><th>نامعتبر</th><th>تکراری</th><th>کاربر بله نیست</th><th>زمان</th></tr>
+    {% for b in batches %}
+      <tr>
+        <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
+        <td>{{ b.source_file_name }}</td>
+        <td>{% if b.dry_run %}تست{% else %}ارسال واقعی{% endif %}</td>
+        <td>{{ b.total_rows }}</td><td>{{ b.total_sent }}</td><td>{{ b.total_invalid }}</td><td>{{ b.total_duplicate }}</td><td>{{ b.total_not_bale_user }}</td><td>{{ b.started_at }}</td>
+      </tr>
+    {% empty %}<tr><td colspan="9">هنوز گزارشی ثبت نشده است.</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}
