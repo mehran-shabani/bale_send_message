@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 from uuid import uuid4
 import json
 import re
@@ -293,9 +293,13 @@ def _sleep_until_cancel_or_timeout(batch: MessageBatch, seconds: float) -> bool:
         return _is_cancel_requested(batch)
 
     remaining = seconds
+    last_check = 0.0
     while remaining > 0:
-        if _is_cancel_requested(batch):
-            return True
+        now = monotonic()
+        if now - last_check >= 1.0:
+            if _is_cancel_requested(batch):
+                return True
+            last_check = now
         chunk = min(0.2, remaining)
         sleep(chunk)
         remaining -= chunk
@@ -403,10 +407,7 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
                     "sent_at",
                 ]
             )
-            if _is_cancel_requested(batch):
-                cancelled = True
-                break
-            if delay and _sleep_until_cancel_or_timeout(batch, delay):
+            if _sleep_until_cancel_or_timeout(batch, delay or 0.0):
                 cancelled = True
                 break
 

@@ -56,7 +56,7 @@
     </div>
   </section>
 
-  <section class="card" id="live-status-card" data-live-url="{% url 'bale_batch_live_status' batch.id %}">
+  <section class="card" id="live-status-card" data-live-url="{% url 'bale_batch_live_status' batch.id %}" data-active="{% if batch.status == 'pending' or batch.status == 'running' %}true{% else %}false{% endif %}">
     <div class="section-title">
       <h2>۱۰ ارسال آخر به‌صورت زنده</h2>
       <span class="muted" id="live-status-note">هر ۲ ثانیه به‌روزرسانی می‌شود.</span>
@@ -131,6 +131,7 @@
 (function() {
   const card = document.getElementById('live-status-card');
   if (!card) return;
+  if (card.dataset.active !== 'true') return;
   const url = card.dataset.liveUrl;
   const tbody = document.getElementById('live-recipients-body');
   const note = document.getElementById('live-status-note');
@@ -175,8 +176,12 @@
 
   function poll() {
     fetch(url, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
-      .then(function(response) { return response.json(); })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Network response was not ok');
+        return response.json();
+      })
       .then(function(data) {
+        poll.consecutiveFailures = 0;
         updateStats(data.batch);
         renderRows(data.recent_recipients);
         if (!data.batch.is_active) {
@@ -189,7 +194,13 @@
         }
       })
       .catch(function() {
-        note.textContent = 'به‌روزرسانی زنده موقتاً ناموفق بود.';
+        poll.consecutiveFailures = (poll.consecutiveFailures || 0) + 1;
+        if (poll.consecutiveFailures >= 5) {
+          note.textContent = 'به‌روزرسانی زنده به دلیل خطاهای متوالی متوقف شد.';
+          if (timer) clearInterval(timer);
+        } else {
+          note.textContent = 'به‌روزرسانی زنده موقتاً ناموفق بود.';
+        }
       });
   }
 
