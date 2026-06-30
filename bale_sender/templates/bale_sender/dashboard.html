@@ -16,6 +16,8 @@
 
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
+    <input type="hidden" name="form_kind" value="excel">
+    {{ form.uploaded_file_token }}
     {{ form.non_field_errors }}
 
     <div class="form-section">
@@ -29,7 +31,43 @@
       {{ form.sheet_name }}
       {% if form.sheet_name.help_text %}<div class="helptext">{{ form.sheet_name.help_text }}</div>{% endif %}
       {% for error in form.sheet_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+      {% if form.uploaded_file_token.value %}
+        <div class="alert alert-info">فایل پیش‌نمایش‌شده آماده ارسال است. اگر فایل جدید انتخاب کنی، فایل جدید جایگزین می‌شود.</div>
+      {% endif %}
     </div>
+
+    {% if preview %}
+    <div class="form-section">
+      <h3>پیش‌نمایش فایل</h3>
+      <p class="muted">فایل: <b>{{ preview.file_name }}</b> | {{ preview.shown_rows }} ردیف اول از {{ preview.total_rows }} ردیف خوانده‌شده نمایش داده شده است.</p>
+      <div class="grid">
+        <div class="stat stat-success"><span>آماده ارسال</span><b>{{ preview.valid_rows }}</b></div>
+        <div class="stat stat-error"><span>شماره نامعتبر</span><b>{{ preview.invalid_rows }}</b></div>
+        <div class="stat stat-warning"><span>تکراری داخل فایل</span><b>{{ preview.duplicate_rows }}</b></div>
+      </div>
+      {% if not preview.is_sendable %}
+        <div class="alert alert-danger">هیچ ردیف قابل ارسالی پیدا نشد. قبل از شروع پردازش، فایل را اصلاح کن.</div>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <tr><th>ردیف</th><th>نام</th><th>نام خانوادگی</th><th>شماره خام</th><th>شماره استاندارد</th><th>وضعیت</th><th>متن پیام</th></tr>
+          {% for r in preview.rows %}
+            <tr>
+              <td>{{ r.row_number }}</td>
+              <td>{{ r.first_name }}</td>
+              <td>{{ r.last_name }}</td>
+              <td class="ltr">{{ r.raw_phone }}</td>
+              <td class="ltr">{{ r.normalized_phone }}</td>
+              <td><span class="badge badge-{{ r.status }}">{{ r.status_label }}</span></td>
+              <td>{{ r.final_text|linebreaksbr }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7">ردیفی برای نمایش وجود ندارد.</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="form-section">
       <h3>۲. متن پیام</h3>
@@ -87,8 +125,58 @@
         <div class="helptext">این گزینه فقط برای ارسال واقعی لازم است و نشان می‌دهد از غیرقابل بازگشت بودن ارسال آگاه هستی.</div>
         {% for error in form.confirm_real_send.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
       </div>
-      <p><button type="submit">شروع پردازش</button></p>
+      <p>
+        <button type="submit" name="action" value="preview">پیش‌نمایش ۱۰ ردیف اول</button>
+        <button type="submit" name="action" value="send">شروع پردازش</button>
+      </p>
     </div>
+  </form>
+</div>
+<div class="card">
+  <h2>ارسال تست تک‌نفره</h2>
+  <p class="muted">برای اطمینان از تنظیمات API و متن پیام، یک پیام واقعی فقط به همین شماره ارسال می‌شود و نتیجه در گزارش‌ها ثبت می‌شود.</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="form_kind" value="single_test">
+    {{ single_test_form.non_field_errors }}
+
+    <div class="form-section">
+      <h3>مشخصات گیرنده تست</h3>
+      {{ single_test_form.first_name.label_tag }}
+      {{ single_test_form.first_name }}
+      {% for error in single_test_form.first_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      {{ single_test_form.last_name.label_tag }}
+      {{ single_test_form.last_name }}
+      {% for error in single_test_form.last_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      {{ single_test_form.phone.label_tag }}
+      {{ single_test_form.phone }}
+      {% if single_test_form.phone.help_text %}<div class="helptext">{{ single_test_form.phone.help_text }}</div>{% endif %}
+      {% for error in single_test_form.phone.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <div class="form-section">
+      <h3>متن و دکمه تست</h3>
+      {{ single_test_form.message_template.label_tag }}
+      {{ single_test_form.message_template }}
+      {% if single_test_form.message_template.help_text %}<div class="helptext">{{ single_test_form.message_template.help_text }}</div>{% endif %}
+      {% for error in single_test_form.message_template.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      {{ single_test_form.button_enabled.label_tag }}
+      {{ single_test_form.button_enabled }}
+      {% for error in single_test_form.button_enabled.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      {{ single_test_form.button_text.label_tag }}
+      {{ single_test_form.button_text }}
+      {% for error in single_test_form.button_text.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+      {{ single_test_form.button_url.label_tag }}
+      {{ single_test_form.button_url }}
+      {% for error in single_test_form.button_url.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+    </div>
+
+    <p><button type="submit" class="green">ارسال تست واقعی</button></p>
   </form>
 </div>
 <div class="card">

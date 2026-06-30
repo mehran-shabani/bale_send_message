@@ -35,6 +35,15 @@ class ExcelRecipient:
         return " ".join(x for x in [self.first_name, self.last_name] if x).strip()
 
 
+def _recipient_preview_status(item: ExcelRecipient, seen: set[str]) -> tuple[str, str]:
+    if not item.normalized_phone:
+        return "invalid_phone", "شماره نامعتبر"
+    if item.normalized_phone in seen:
+        return "duplicate", "تکراری در فایل"
+    seen.add(item.normalized_phone)
+    return "ok", "آماده ارسال"
+
+
 def normalize_iran_mobile(value: object) -> str | None:
     if value is None:
         return None
@@ -145,6 +154,41 @@ def render_message(template: str, recipient: ExcelRecipient) -> str:
         )
     except (KeyError, ValueError) as exc:
         raise ValueError("قالب پیام نامعتبر است و امکان ساخت متن پیام وجود ندارد.") from exc
+
+
+def build_excel_preview(file_path: str | Path, *, sheet_name: str | None = None, message_template: str, limit: int = 10) -> dict:
+    recipients = read_excel_recipients(file_path, sheet_name=sheet_name)
+    seen: set[str] = set()
+    preview_rows: list[dict] = []
+    counts = {"ok": 0, "invalid_phone": 0, "duplicate": 0}
+
+    for item in recipients:
+        status, status_label = _recipient_preview_status(item, seen)
+        counts[status] += 1
+        if len(preview_rows) < limit:
+            preview_rows.append(
+                {
+                    "row_number": item.row_number,
+                    "first_name": item.first_name,
+                    "last_name": item.last_name,
+                    "full_name": item.full_name,
+                    "raw_phone": item.raw_phone,
+                    "normalized_phone": item.normalized_phone or "",
+                    "status": status,
+                    "status_label": status_label,
+                    "final_text": render_message(message_template, item),
+                }
+            )
+
+    return {
+        "total_rows": len(recipients),
+        "valid_rows": counts["ok"],
+        "invalid_rows": counts["invalid_phone"],
+        "duplicate_rows": counts["duplicate"],
+        "rows": preview_rows,
+        "shown_rows": len(preview_rows),
+        "is_sendable": counts["ok"] > 0,
+    }
 
 
 class BaleSafirClient:
@@ -354,6 +398,84 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
         batch.save(update_fields=["status", "error_message", "finished_at"])
         raise
 
+    return batch
+
+
+def send_single_recipient_test(*, first_name: str, last_name: str, phone: str, message_template: str, button_text: str | None = None, button_url: str | None = None) -> MessageBatch:
+    item = ExcelRecipient(
+        row_number=1,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        raw_phone=phone.strip(),
+        normalized_phone=normalize_iran_mobile(phone),
+    )
+    final_text = render_message(message_template, item)
+    batch = MessageBatch.objects.create(
+        source_file_name="ارسال تست تک‌نفره",
+        message_template=message_template,
+        button_text=button_text or "",
+        button_url=button_url or "",
+        dry_run=False,
+        limit=1,
+        status=MessageBatch.Status.RUNNING,
+    )
+    recipient = MessageRecipient.objects.create(
+        batch=batch,
+        row_number=item.row_number,
+        first_name=item.first_name,
+        last_name=item.last_name,
+        full_name=item.full_name,
+        raw_phone=item.raw_phone,
+        normalized_phone=item.normalized_phone or "",
+        final_text=final_text,
+    )
+
+    if not item.normalized_phone:
+        recipient.status = MessageRecipient.Status.INVALID_PHONE
+        recipient.error_message = "شماره موبایل معتبر نیست."
+        recipient.save(update_fields=["status", "error_message"])
+    else:
+        recipient.request_id = f"bale-test-{batch.id}-{uuid4().hex[:8]}"
+        result = BaleSafirClient().send(
+            phone_number=item.normalized_phone,
+            text=final_text,
+            request_id=recipient.request_id,
+            button_text=button_text,
+            button_url=button_url,
+        )
+        recipient.status = result.get("status", MessageRecipient.Status.FAILED)
+        recipient.http_status = result.get("http_status")
+        recipient.api_code = result.get("api_code", "")
+        recipient.api_message = result.get("api_message", "")
+        recipient.raw_response = result.get("raw_response", "")
+        recipient.error_message = result.get("error", "")
+        recipient.sent_at = timezone.now() if recipient.status == MessageRecipient.Status.SENT else None
+        recipient.save(
+            update_fields=[
+                "request_id",
+                "status",
+                "http_status",
+                "api_code",
+                "api_message",
+                "raw_response",
+                "error_message",
+                "sent_at",
+            ]
+        )
+
+    reports_dir = Path(settings.BASE_DIR) / "reports"
+    batch.report_path = str(reports_dir / f"bale_report_single_test_{batch.id}.xlsx")
+    batch.save(update_fields=["report_path"])
+    write_report(batch, Path(batch.report_path))
+    _refresh_totals(batch, mark_finished=True)
+    if recipient.status == MessageRecipient.Status.SENT:
+        batch.status = MessageBatch.Status.FINISHED
+        batch.error_message = ""
+        batch.save(update_fields=["status", "error_message"])
+    else:
+        batch.status = MessageBatch.Status.FAILED
+        batch.error_message = "ارسال تست موفق نبود. جزئیات خطا را در گزارش همین ارسال ببین."
+        batch.save(update_fields=["status", "error_message"])
     return batch
 
 

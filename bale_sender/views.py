@@ -5,15 +5,16 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib import messages
+from django.core import signing
 from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from .forms import UploadExcelForm
+from .forms import SingleMessageTestForm, UploadExcelForm
 from .models import MessageBatch, MessageRecipient
-from .core import process_excel_batch
+from .core import build_excel_preview, process_excel_batch, send_single_recipient_test
 
 
 logger = logging.getLogger(__name__)
@@ -40,46 +41,117 @@ def _save_uploaded_file(uploaded) -> Path:
     return file_path
 
 
+def _make_upload_token(file_path: Path) -> str:
+    return signing.dumps({"path": str(file_path.resolve()), "name": file_path.name}, salt="bale-upload-preview")
+
+
+def _resolve_upload_token(token: str) -> Path:
+    try:
+        data = signing.loads(token, salt="bale-upload-preview", max_age=60 * 60 * 6)
+    except signing.BadSignature as exc:
+        raise ValueError("فایل پیش‌نمایش معتبر نیست یا زمان آن تمام شده است. لطفاً فایل اکسل را دوباره انتخاب کن.") from exc
+
+    path = Path(data.get("path", "")).resolve()
+    uploads_root = (Path(settings.BASE_DIR) / "uploads").resolve()
+    if uploads_root not in path.parents or not path.exists():
+        raise ValueError("فایل ذخیره‌شده برای پیش‌نمایش پیدا نشد. لطفاً فایل اکسل را دوباره انتخاب کن.")
+    return path
+
+
 def _batch_stats(batch: MessageBatch) -> dict[str, int]:
     counts = dict(batch.recipients.values("status").annotate(c=Count("id")).values_list("status", "c"))
     return {key: counts.get(key, 0) for key, _label in MessageRecipient.Status.choices}
 
 
 def dashboard(request):
+    preview = None
+    upload_form = UploadExcelForm()
+    single_test_form = SingleMessageTestForm()
+
     if request.method == "POST":
-        form = UploadExcelForm(request.POST, request.FILES)
-        if form.is_valid():
-            uploaded_path = _save_uploaded_file(form.cleaned_data["excel_file"])
-            button_text = form.cleaned_data["button_text"] if form.cleaned_data["button_enabled"] else None
-            button_url = form.cleaned_data["button_url"] if form.cleaned_data["button_enabled"] else None
-            dry_run = form.cleaned_data["send_mode"] == "dry_run"
-            batch = MessageBatch.objects.create(
-                source_file_name=uploaded_path.name,
-                message_template=form.cleaned_data["message_template"],
-                button_text=button_text or "",
-                button_url=button_url or "",
-                dry_run=dry_run,
-                limit=form.cleaned_data["limit"],
-            )
-            options = {
-                "sleep_seconds": form.cleaned_data["sleep_seconds"],
-                "sheet_name": form.cleaned_data["sheet_name"] or None,
-                "skip_duplicates": form.cleaned_data["skip_duplicates"],
-            }
-            transaction.on_commit(
-                lambda: Thread(
-                    target=_run_batch_in_background,
-                    args=(batch.id, str(uploaded_path), options),
-                    daemon=True,
-                ).start()
-            )
-            messages.success(request, "فایل ثبت شد و پردازش در پس‌زمینه شروع شد. وضعیت را در همین صفحه دنبال کن.")
-            return redirect("bale_batch_detail", batch_id=batch.id)
-    else:
-        form = UploadExcelForm()
+        form_kind = request.POST.get("form_kind", "excel")
+        if form_kind == "single_test":
+            single_test_form = SingleMessageTestForm(request.POST)
+            if single_test_form.is_valid():
+                button_text = single_test_form.cleaned_data["button_text"] if single_test_form.cleaned_data["button_enabled"] else None
+                button_url = single_test_form.cleaned_data["button_url"] if single_test_form.cleaned_data["button_enabled"] else None
+                batch = send_single_recipient_test(
+                    first_name=single_test_form.cleaned_data["first_name"],
+                    last_name=single_test_form.cleaned_data["last_name"],
+                    phone=single_test_form.cleaned_data["phone"],
+                    message_template=single_test_form.cleaned_data["message_template"],
+                    button_text=button_text,
+                    button_url=button_url,
+                )
+                if batch.status == MessageBatch.Status.FINISHED:
+                    messages.success(request, "ارسال تست تک‌نفره با موفقیت انجام شد.")
+                else:
+                    messages.warning(request, "ارسال تست تک‌نفره ثبت شد، اما موفق نبود. جزئیات را بررسی کن.")
+                return redirect("bale_batch_detail", batch_id=batch.id)
+        else:
+            action = request.POST.get("action", "send")
+            upload_form = UploadExcelForm(request.POST, request.FILES, validate_send_confirmation=(action == "send"))
+            if upload_form.is_valid():
+                try:
+                    uploaded = upload_form.cleaned_data.get("excel_file")
+                    if uploaded:
+                        uploaded_path = _save_uploaded_file(uploaded)
+                    else:
+                        uploaded_path = _resolve_upload_token(upload_form.cleaned_data["uploaded_file_token"])
+
+                    if action == "preview":
+                        upload_token = _make_upload_token(uploaded_path)
+                        preview = build_excel_preview(
+                            uploaded_path,
+                            sheet_name=upload_form.cleaned_data["sheet_name"] or None,
+                            message_template=upload_form.cleaned_data["message_template"],
+                            limit=10,
+                        )
+                        preview["file_name"] = uploaded_path.name
+                        post_data = request.POST.copy()
+                        post_data["uploaded_file_token"] = upload_token
+                        upload_form = UploadExcelForm(post_data, validate_send_confirmation=False)
+                        messages.success(request, "پیش‌نمایش آماده شد. اگر ردیف‌ها درست هستند، می‌توانی پردازش را شروع کنی.")
+                    else:
+                        button_text = upload_form.cleaned_data["button_text"] if upload_form.cleaned_data["button_enabled"] else None
+                        button_url = upload_form.cleaned_data["button_url"] if upload_form.cleaned_data["button_enabled"] else None
+                        dry_run = upload_form.cleaned_data["send_mode"] == "dry_run"
+                        batch = MessageBatch.objects.create(
+                            source_file_name=uploaded_path.name,
+                            message_template=upload_form.cleaned_data["message_template"],
+                            button_text=button_text or "",
+                            button_url=button_url or "",
+                            dry_run=dry_run,
+                            limit=upload_form.cleaned_data["limit"],
+                        )
+                        options = {
+                            "sleep_seconds": upload_form.cleaned_data["sleep_seconds"],
+                            "sheet_name": upload_form.cleaned_data["sheet_name"] or None,
+                            "skip_duplicates": upload_form.cleaned_data["skip_duplicates"],
+                        }
+                        transaction.on_commit(
+                            lambda: Thread(
+                                target=_run_batch_in_background,
+                                args=(batch.id, str(uploaded_path), options),
+                                daemon=True,
+                            ).start()
+                        )
+                        messages.success(request, "فایل ثبت شد و پردازش در پس‌زمینه شروع شد. وضعیت را در همین صفحه دنبال کن.")
+                        return redirect("bale_batch_detail", batch_id=batch.id)
+                except ValueError as exc:
+                    upload_form.add_error(None, str(exc))
 
     recent_batches = MessageBatch.objects.order_by("-started_at")[:10]
-    return render(request, "bale_sender/dashboard.html", {"form": form, "recent_batches": recent_batches})
+    return render(
+        request,
+        "bale_sender/dashboard.html",
+        {
+            "form": upload_form,
+            "single_test_form": single_test_form,
+            "preview": preview,
+            "recent_batches": recent_batches,
+        },
+    )
 
 
 def batch_list(request):

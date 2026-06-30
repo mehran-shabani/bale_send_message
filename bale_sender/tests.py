@@ -6,9 +6,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from openpyxl import Workbook
 
-from .core import BaleSafirClient, ExcelRecipient, normalize_iran_mobile, read_excel_recipients, render_message, run_excel_batch
-from .forms import UploadExcelForm
-from .models import MessageRecipient
+from .core import BaleSafirClient, ExcelRecipient, build_excel_preview, normalize_iran_mobile, read_excel_recipients, render_message, run_excel_batch, send_single_recipient_test
+from .forms import SingleMessageTestForm, UploadExcelForm
+from .models import MessageBatch, MessageRecipient
 
 
 TEST_PHONE_LOCAL = "09120000000"
@@ -64,6 +64,24 @@ class ExcelTests(TestCase):
         with self.assertRaisesMessage(ValueError, "ردیف اول فایل اکسل باید header"):
             read_excel_recipients(tmp)
 
+    def test_build_excel_preview_counts_and_limits_rows(self):
+        tmp = Path(tempfile.mkdtemp()) / "preview.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["نام", "نام خانوادگی", "موبایل"])
+        ws.append(["علی", "رضایی", TEST_PHONE_LOCAL])
+        ws.append(["تکراری", "رضایی", TEST_PHONE_LOCAL])
+        ws.append(["بد", "شماره", "123"])
+        wb.save(tmp)
+
+        preview = build_excel_preview(tmp, message_template="سلام {full_name}", limit=2)
+        self.assertEqual(preview["total_rows"], 3)
+        self.assertEqual(preview["valid_rows"], 1)
+        self.assertEqual(preview["duplicate_rows"], 1)
+        self.assertEqual(preview["invalid_rows"], 1)
+        self.assertEqual(len(preview["rows"]), 2)
+        self.assertEqual(preview["rows"][0]["status"], "ok")
+
 
 class MessageTemplateTests(TestCase):
     def test_render_message_allows_only_known_placeholders(self):
@@ -80,6 +98,40 @@ class MessageTemplateTests(TestCase):
             self.assertFalse(form.is_valid())
             self.assertIn("message_template", form.errors)
             self.assertIn("excel_file", form.errors)
+
+    def test_upload_form_accepts_saved_preview_token_without_new_file(self):
+        form = UploadExcelForm(
+            data={
+                "uploaded_file_token": "token",
+                "message_template": "سلام {full_name}",
+                "send_mode": "dry_run",
+                "sleep_seconds": "0",
+            }
+        )
+        self.assertTrue(form.is_valid())
+
+    def test_single_message_test_form_validates_phone_and_template(self):
+        form = SingleMessageTestForm(
+            data={
+                "first_name": "علی",
+                "last_name": "رضایی",
+                "phone": TEST_PHONE_LOCAL,
+                "message_template": "سلام {full_name}",
+            }
+        )
+        self.assertTrue(form.is_valid())
+
+        bad_form = SingleMessageTestForm(
+            data={
+                "first_name": "علی",
+                "last_name": "رضایی",
+                "phone": "123",
+                "message_template": "سلام {unknown}",
+            }
+        )
+        self.assertFalse(bad_form.is_valid())
+        self.assertIn("phone", bad_form.errors)
+        self.assertIn("message_template", bad_form.errors)
 
 
 class SafirClientTests(TestCase):
@@ -126,3 +178,19 @@ class BatchTests(TestCase):
         self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.DUPLICATE).count(), 1)
         self.assertEqual(batch.recipients.filter(status=MessageRecipient.Status.INVALID_PHONE).count(), 1)
         self.assertTrue(report.exists())
+
+    @patch("bale_sender.core.BaleSafirClient.send")
+    def test_single_recipient_test_send_creates_reported_batch(self, send_mock):
+        send_mock.return_value = {"status": MessageRecipient.Status.SENT, "http_status": 200, "api_message": "ok"}
+
+        batch = send_single_recipient_test(
+            first_name="علی",
+            last_name="رضایی",
+            phone=TEST_PHONE_LOCAL,
+            message_template="سلام {full_name}",
+        )
+
+        self.assertEqual(batch.status, MessageBatch.Status.FINISHED)
+        self.assertEqual(batch.total_rows, 1)
+        self.assertEqual(batch.total_sent, 1)
+        self.assertEqual(batch.recipients.get().final_text, "سلام علی رضایی")
