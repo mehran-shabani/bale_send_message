@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
+from threading import Thread
 from uuid import uuid4
 
 from django.conf import settings
 from django.contrib import messages
+from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -10,8 +13,21 @@ from django.utils import timezone
 
 from .forms import UploadExcelForm
 from .models import MessageBatch, MessageRecipient
-from .core import run_excel_batch
+from .core import process_excel_batch
 
+
+logger = logging.getLogger(__name__)
+
+def _run_batch_in_background(batch_id: int, file_path: str, options: dict) -> None:
+    close_old_connections()
+    try:
+        batch = MessageBatch.objects.get(pk=batch_id)
+        process_excel_batch(batch=batch, file_path=file_path, **options)
+    except Exception as exc:
+        # process_excel_batch stores the readable failure message on the batch.
+        logger.exception("Error processing batch %s in background: %s", batch_id, exc)
+    finally:
+        close_old_connections()
 
 def _save_uploaded_file(uploaded) -> Path:
     upload_dir = Path(settings.BASE_DIR) / "uploads" / timezone.localtime().strftime("%Y%m%d")
@@ -37,26 +53,28 @@ def dashboard(request):
             button_text = form.cleaned_data["button_text"] if form.cleaned_data["button_enabled"] else None
             button_url = form.cleaned_data["button_url"] if form.cleaned_data["button_enabled"] else None
             dry_run = form.cleaned_data["send_mode"] == "dry_run"
-            try:
-                batch = run_excel_batch(
-                    file_path=str(uploaded_path),
-                    message_template=form.cleaned_data["message_template"],
-                    dry_run=dry_run,
-                    limit=form.cleaned_data["limit"],
-                    sleep_seconds=form.cleaned_data["sleep_seconds"],
-                    sheet_name=form.cleaned_data["sheet_name"] or None,
-                    button_text=button_text,
-                    button_url=button_url,
-                    skip_duplicates=form.cleaned_data["skip_duplicates"],
-                )
-            except Exception as exc:
-                messages.error(request, f"پردازش انجام نشد: {exc}")
-            else:
-                if dry_run:
-                    messages.success(request, "تست انجام شد و گزارش ساخته شد. اگر همه چیز درست بود، ارسال واقعی را اجرا کن.")
-                else:
-                    messages.success(request, "ارسال واقعی انجام شد و گزارش کامل آماده است.")
-                return redirect("bale_batch_detail", batch_id=batch.id)
+            batch = MessageBatch.objects.create(
+                source_file_name=uploaded_path.name,
+                message_template=form.cleaned_data["message_template"],
+                button_text=button_text or "",
+                button_url=button_url or "",
+                dry_run=dry_run,
+                limit=form.cleaned_data["limit"],
+            )
+            options = {
+                "sleep_seconds": form.cleaned_data["sleep_seconds"],
+                "sheet_name": form.cleaned_data["sheet_name"] or None,
+                "skip_duplicates": form.cleaned_data["skip_duplicates"],
+            }
+            transaction.on_commit(
+                lambda: Thread(
+                    target=_run_batch_in_background,
+                    args=(batch.id, str(uploaded_path), options),
+                    daemon=True,
+                ).start()
+            )
+            messages.success(request, "فایل ثبت شد و پردازش در پس‌زمینه شروع شد. وضعیت را در همین صفحه دنبال کن.")
+            return redirect("bale_batch_detail", batch_id=batch.id)
     else:
         form = UploadExcelForm()
 

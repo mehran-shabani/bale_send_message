@@ -163,7 +163,7 @@ def write_report(batch: MessageBatch, report_path: Path) -> None:
     wb.save(report_path)
 
 
-def _refresh_totals(batch: MessageBatch) -> None:
+def _refresh_totals(batch: MessageBatch, *, mark_finished: bool = False) -> None:
     recipients = batch.recipients.all()
     batch.total_rows = recipients.count()
     batch.total_sent = recipients.filter(status=MessageRecipient.Status.SENT).count()
@@ -174,15 +174,107 @@ def _refresh_totals(batch: MessageBatch) -> None:
     batch.total_rate_limited = recipients.filter(status=MessageRecipient.Status.RATE_LIMITED).count()
     batch.total_payment_required = recipients.filter(status=MessageRecipient.Status.PAYMENT_REQUIRED).count()
     batch.total_config_error = recipients.filter(status=MessageRecipient.Status.CONFIG_ERROR).count()
-    batch.finished_at = timezone.now()
+    if mark_finished:
+        batch.finished_at = timezone.now()
     batch.save()
 
 
-def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = True, limit: int | None = None, sleep_seconds: float | None = None, sheet_name: str | None = None, button_text: str | None = None, button_url: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
-    recipients = read_excel_recipients(file_path, sheet_name=sheet_name)
-    if limit:
-        recipients = recipients[:limit]
+def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: float | None = None, sheet_name: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
+    batch.status = MessageBatch.Status.RUNNING
+    batch.error_message = ""
+    batch.finished_at = None
+    batch.save(update_fields=["status", "error_message", "finished_at"])
 
+    try:
+        recipients = read_excel_recipients(file_path, sheet_name=sheet_name)
+        if batch.limit:
+            recipients = recipients[: batch.limit]
+
+        seen: set[str] = set()
+        client = BaleSafirClient()
+        delay = settings.BALE_DEFAULT_SLEEP_SECONDS if sleep_seconds is None else sleep_seconds
+
+        for item in recipients:
+            final_text = render_message(batch.message_template, item)
+            obj = MessageRecipient(
+                batch=batch,
+                row_number=item.row_number,
+                first_name=item.first_name,
+                last_name=item.last_name,
+                full_name=item.full_name,
+                raw_phone=item.raw_phone,
+                normalized_phone=item.normalized_phone or "",
+                final_text=final_text,
+            )
+
+            if not item.normalized_phone:
+                obj.status = MessageRecipient.Status.INVALID_PHONE
+                obj.error_message = "شماره موبایل معتبر نیست."
+                obj.save()
+                continue
+
+            if skip_duplicates and item.normalized_phone in seen:
+                obj.status = MessageRecipient.Status.DUPLICATE
+                obj.error_message = "این شماره در همین فایل تکراری است."
+                obj.save()
+                continue
+            seen.add(item.normalized_phone)
+
+            request_id = f"bale-{batch.id}-{item.row_number}-{uuid4().hex[:8]}"
+            obj.request_id = request_id
+
+            if batch.dry_run:
+                obj.status = MessageRecipient.Status.DRY_RUN
+                obj.api_message = "dry-run: ارسال واقعی انجام نشد."
+                obj.save()
+                continue
+
+            result = client.send(
+                phone_number=item.normalized_phone,
+                text=final_text,
+                request_id=request_id,
+                button_text=batch.button_text,
+                button_url=batch.button_url,
+            )
+            obj.status = result.get("status", MessageRecipient.Status.FAILED)
+            obj.http_status = result.get("http_status")
+            obj.api_code = result.get("api_code", "")
+            obj.api_message = result.get("api_message", "")
+            obj.raw_response = result.get("raw_response", "")
+            obj.error_message = result.get("error", "")
+            obj.sent_at = timezone.now() if obj.status == MessageRecipient.Status.SENT else None
+            obj.save()
+            if delay:
+                sleep(delay)
+
+        if not report_path:
+            reports_dir = Path(settings.BASE_DIR) / "reports"
+            report_path = str(reports_dir / f"bale_report_batch_{batch.id}.xlsx")
+        batch.report_path = report_path
+        batch.save(update_fields=["report_path"])
+        write_report(batch, Path(report_path))
+        _refresh_totals(batch)
+        if not batch.dry_run and (batch.total_failed or batch.total_config_error):
+            batch.status = MessageBatch.Status.FAILED
+            batch.error_message = "پردازش کامل شد، اما بخشی از ارسال‌ها به دلیل خطای API یا تنظیمات ناموفق بود. جزئیات ردیف‌ها را بررسی کن."
+            batch.finished_at = timezone.now()
+            batch.save(update_fields=["status", "error_message", "finished_at"])
+        else:
+            batch.status = MessageBatch.Status.FINISHED
+            batch.finished_at = timezone.now()
+            batch.save(update_fields=["status", "finished_at"])
+    except Exception as exc:
+        _refresh_totals(batch)
+        batch.status = MessageBatch.Status.FAILED
+        batch.error_message = f"خطا در پردازش batch: {exc}"
+        batch.finished_at = timezone.now()
+        batch.save(update_fields=["status", "error_message", "finished_at"])
+        raise
+
+    return batch
+
+
+def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = True, limit: int | None = None, sleep_seconds: float | None = None, sheet_name: str | None = None, button_text: str | None = None, button_url: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
     batch = MessageBatch.objects.create(
         source_file_name=Path(file_path).name,
         message_template=message_template,
@@ -191,69 +283,11 @@ def run_excel_batch(*, file_path: str, message_template: str, dry_run: bool = Tr
         dry_run=dry_run,
         limit=limit,
     )
-
-    seen: set[str] = set()
-    client = BaleSafirClient()
-    delay = settings.BALE_DEFAULT_SLEEP_SECONDS if sleep_seconds is None else sleep_seconds
-
-    for item in recipients:
-        final_text = render_message(message_template, item)
-        obj = MessageRecipient.objects.create(
-            batch=batch,
-            row_number=item.row_number,
-            first_name=item.first_name,
-            last_name=item.last_name,
-            full_name=item.full_name,
-            raw_phone=item.raw_phone,
-            normalized_phone=item.normalized_phone or "",
-            final_text=final_text,
-        )
-
-        if not item.normalized_phone:
-            obj.status = MessageRecipient.Status.INVALID_PHONE
-            obj.error_message = "شماره موبایل معتبر نیست."
-            obj.save()
-            continue
-
-        if skip_duplicates and item.normalized_phone in seen:
-            obj.status = MessageRecipient.Status.DUPLICATE
-            obj.error_message = "این شماره در همین فایل تکراری است."
-            obj.save()
-            continue
-        seen.add(item.normalized_phone)
-
-        request_id = f"bale-{batch.id}-{item.row_number}-{uuid4().hex[:8]}"
-        obj.request_id = request_id
-
-        if dry_run:
-            obj.status = MessageRecipient.Status.DRY_RUN
-            obj.api_message = "dry-run: ارسال واقعی انجام نشد."
-            obj.save()
-            continue
-
-        result = client.send(
-            phone_number=item.normalized_phone,
-            text=final_text,
-            request_id=request_id,
-            button_text=button_text,
-            button_url=button_url,
-        )
-        obj.status = result.get("status", MessageRecipient.Status.FAILED)
-        obj.http_status = result.get("http_status")
-        obj.api_code = result.get("api_code", "")
-        obj.api_message = result.get("api_message", "")
-        obj.raw_response = result.get("raw_response", "")
-        obj.error_message = result.get("error", "")
-        obj.sent_at = timezone.now() if obj.status == MessageRecipient.Status.SENT else None
-        obj.save()
-        if delay:
-            sleep(delay)
-
-    if not report_path:
-        reports_dir = Path(settings.BASE_DIR) / "reports"
-        report_path = str(reports_dir / f"bale_report_batch_{batch.id}.xlsx")
-    batch.report_path = report_path
-    batch.save(update_fields=["report_path"])
-    write_report(batch, Path(report_path))
-    _refresh_totals(batch)
-    return batch
+    return process_excel_batch(
+        batch=batch,
+        file_path=file_path,
+        sleep_seconds=sleep_seconds,
+        sheet_name=sheet_name,
+        skip_duplicates=skip_duplicates,
+        report_path=report_path,
+    )
