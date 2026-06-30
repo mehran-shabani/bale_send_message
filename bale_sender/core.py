@@ -9,6 +9,7 @@ import re
 
 import requests
 from django.conf import settings
+from django.db.models import Count
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 
@@ -158,25 +159,37 @@ def write_report(batch: MessageBatch, report_path: Path) -> None:
     ws = wb.active
     ws.title = "گزارش ارسال"
     ws.append(["ردیف اکسل", "نام", "نام خانوادگی", "نام کامل", "شماره خام", "شماره استاندارد", "وضعیت", "HTTP", "کد API", "پیام API", "خطا", "متن نهایی"])
-    for r in batch.recipients.all().order_by("row_number", "id"):
+    for r in batch.recipients.all().order_by("row_number", "id").iterator(chunk_size=1000):
         ws.append([r.row_number, r.first_name, r.last_name, r.full_name, r.raw_phone, r.normalized_phone, r.status, r.http_status, r.api_code, r.api_message, r.error_message, r.final_text])
     wb.save(report_path)
 
 
 def _refresh_totals(batch: MessageBatch, *, mark_finished: bool = False) -> None:
-    recipients = batch.recipients.all()
-    batch.total_rows = recipients.count()
-    batch.total_sent = recipients.filter(status=MessageRecipient.Status.SENT).count()
-    batch.total_failed = recipients.filter(status=MessageRecipient.Status.FAILED).count()
-    batch.total_invalid = recipients.filter(status=MessageRecipient.Status.INVALID_PHONE).count()
-    batch.total_duplicate = recipients.filter(status=MessageRecipient.Status.DUPLICATE).count()
-    batch.total_not_bale_user = recipients.filter(status=MessageRecipient.Status.NOT_BALE_USER).count()
-    batch.total_rate_limited = recipients.filter(status=MessageRecipient.Status.RATE_LIMITED).count()
-    batch.total_payment_required = recipients.filter(status=MessageRecipient.Status.PAYMENT_REQUIRED).count()
-    batch.total_config_error = recipients.filter(status=MessageRecipient.Status.CONFIG_ERROR).count()
+    counts = dict(batch.recipients.order_by().values("status").annotate(c=Count("id")).values_list("status", "c"))
+    batch.total_rows = sum(counts.values())
+    batch.total_sent = counts.get(MessageRecipient.Status.SENT, 0)
+    batch.total_failed = counts.get(MessageRecipient.Status.FAILED, 0)
+    batch.total_invalid = counts.get(MessageRecipient.Status.INVALID_PHONE, 0)
+    batch.total_duplicate = counts.get(MessageRecipient.Status.DUPLICATE, 0)
+    batch.total_not_bale_user = counts.get(MessageRecipient.Status.NOT_BALE_USER, 0)
+    batch.total_rate_limited = counts.get(MessageRecipient.Status.RATE_LIMITED, 0)
+    batch.total_payment_required = counts.get(MessageRecipient.Status.PAYMENT_REQUIRED, 0)
+    batch.total_config_error = counts.get(MessageRecipient.Status.CONFIG_ERROR, 0)
+    update_fields = [
+        "total_rows",
+        "total_sent",
+        "total_failed",
+        "total_invalid",
+        "total_duplicate",
+        "total_not_bale_user",
+        "total_rate_limited",
+        "total_payment_required",
+        "total_config_error",
+    ]
     if mark_finished:
         batch.finished_at = timezone.now()
-    batch.save()
+        update_fields.append("finished_at")
+    batch.save(update_fields=update_fields)
 
 
 def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: float | None = None, sheet_name: str | None = None, skip_duplicates: bool = True, report_path: str | None = None) -> MessageBatch:
@@ -193,6 +206,18 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
         seen: set[str] = set()
         client = BaleSafirClient()
         delay = settings.BALE_DEFAULT_SLEEP_SECONDS if sleep_seconds is None else sleep_seconds
+        pending_bulk_recipients: list[MessageRecipient] = []
+
+        def queue_bulk_recipient(obj: MessageRecipient) -> None:
+            pending_bulk_recipients.append(obj)
+            if len(pending_bulk_recipients) >= 1000:
+                MessageRecipient.objects.bulk_create(pending_bulk_recipients, batch_size=1000)
+                pending_bulk_recipients.clear()
+
+        def flush_bulk_recipients() -> None:
+            if pending_bulk_recipients:
+                MessageRecipient.objects.bulk_create(pending_bulk_recipients, batch_size=1000)
+                pending_bulk_recipients.clear()
 
         for item in recipients:
             final_text = render_message(batch.message_template, item)
@@ -210,13 +235,13 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
             if not item.normalized_phone:
                 obj.status = MessageRecipient.Status.INVALID_PHONE
                 obj.error_message = "شماره موبایل معتبر نیست."
-                obj.save()
+                queue_bulk_recipient(obj)
                 continue
 
             if skip_duplicates and item.normalized_phone in seen:
                 obj.status = MessageRecipient.Status.DUPLICATE
                 obj.error_message = "این شماره در همین فایل تکراری است."
-                obj.save()
+                queue_bulk_recipient(obj)
                 continue
             seen.add(item.normalized_phone)
 
@@ -226,9 +251,10 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
             if batch.dry_run:
                 obj.status = MessageRecipient.Status.DRY_RUN
                 obj.api_message = "dry-run: ارسال واقعی انجام نشد."
-                obj.save()
+                queue_bulk_recipient(obj)
                 continue
 
+            obj.save()
             result = client.send(
                 phone_number=item.normalized_phone,
                 text=final_text,
@@ -243,10 +269,21 @@ def process_excel_batch(*, batch: MessageBatch, file_path: str, sleep_seconds: f
             obj.raw_response = result.get("raw_response", "")
             obj.error_message = result.get("error", "")
             obj.sent_at = timezone.now() if obj.status == MessageRecipient.Status.SENT else None
-            obj.save()
+            obj.save(
+                update_fields=[
+                    "status",
+                    "http_status",
+                    "api_code",
+                    "api_message",
+                    "raw_response",
+                    "error_message",
+                    "sent_at",
+                ]
+            )
             if delay:
                 sleep(delay)
 
+        flush_bulk_recipients()
         if not report_path:
             reports_dir = Path(settings.BASE_DIR) / "reports"
             report_path = str(reports_dir / f"bale_report_batch_{batch.id}.xlsx")
