@@ -11,6 +11,7 @@
     {% endif %}
   {% endif %}
   {% if batch.report_path %}<a class="btn green" href="{% url 'bale_download_report' batch.id %}">Excel کامل همین گزارش</a>{% endif %}
+  {% if batch.source_file_path %}<a class="btn ghost" href="{% url 'bale_dashboard' %}?reuse_batch={{ batch.id }}">ارسال بازه بعدی همین فایل</a>{% endif %}
   <a class="btn ghost" href="{% url 'bale_dashboard' %}">ارسال جدید</a>
   <a class="btn ghost" href="{% url 'bale_batch_list' %}">همه گزارش‌ها</a>
 {% endblock %}

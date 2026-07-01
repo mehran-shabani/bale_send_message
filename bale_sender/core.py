@@ -590,6 +590,7 @@ def run_excel_batch(
 ) -> MessageBatch:
     batch = MessageBatch.objects.create(
         source_file_name=Path(file_path).name,
+        source_file_path=str(Path(file_path)),
         message_template=message_template,
         button_text=button_text or "",
         button_url=button_url or "",

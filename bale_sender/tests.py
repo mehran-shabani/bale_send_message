@@ -328,6 +328,26 @@ class ReportViewTests(TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(rows[0][0], "شناسه گزارش")
 
+    def test_dashboard_can_reuse_previous_batch_file_for_next_range(self):
+        source = Path(tempfile.mkdtemp()) / "sample.xlsx"
+        source.write_bytes(b"placeholder")
+        batch = MessageBatch.objects.create(
+            source_file_name=source.name,
+            source_file_path=str(source),
+            message_template="سلام {full_name}",
+            range_start=1,
+            range_end=100,
+            total_rows=100,
+        )
+
+        response = self.client.get(reverse("bale_dashboard"), {"reuse_batch": batch.id})
+
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertTrue(form.initial["uploaded_file_token"])
+        self.assertEqual(form.initial["message_template"], "سلام {full_name}")
+        self.assertEqual(form.initial["range_start"], 101)
+
     def test_cancel_batch_view_marks_running_batch_for_stop(self):
         batch = MessageBatch.objects.create(
             source_file_name="sample.xlsx",

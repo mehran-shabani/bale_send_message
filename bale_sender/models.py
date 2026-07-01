@@ -11,6 +11,7 @@ class MessageBatch(models.Model):
         CANCELLED = "cancelled", "متوقف‌شده"
 
     source_file_name = models.CharField(max_length=255)
+    source_file_path = models.CharField(max_length=500, blank=True)
     message_template = models.TextField()
     button_text = models.CharField(max_length=80, blank=True)
     button_url = models.URLField(blank=True)

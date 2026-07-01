@@ -145,6 +145,35 @@ def dashboard(request):
     preview = None
     upload_form = UploadExcelForm()
 
+    reuse_batch_id = request.GET.get("reuse_batch")
+    if request.method == "GET" and reuse_batch_id:
+        reuse_batch = get_object_or_404(MessageBatch, pk=reuse_batch_id)
+        if reuse_batch.source_file_path and Path(reuse_batch.source_file_path).exists():
+            if reuse_batch.range_end:
+                next_start = reuse_batch.range_end + 1
+            elif reuse_batch.range_start and reuse_batch.total_rows:
+                next_start = reuse_batch.range_start + reuse_batch.total_rows
+            else:
+                next_start = (reuse_batch.total_rows or 0) + 1
+            upload_form = UploadExcelForm(
+                initial={
+                    "uploaded_file_token": _make_upload_token(Path(reuse_batch.source_file_path)),
+                    "message_template": reuse_batch.message_template,
+                    "send_mode": "dry_run",
+                    "limit": reuse_batch.limit,
+                    "range_start": next_start,
+                    "sleep_seconds": settings.BALE_DEFAULT_SLEEP_SECONDS,
+                    "skip_duplicates": True,
+                    "button_enabled": bool(reuse_batch.button_text and reuse_batch.button_url),
+                    "button_text": reuse_batch.button_text or settings.BALE_DEFAULT_BUTTON_TEXT,
+                    "button_url": reuse_batch.button_url or settings.BALE_DEFAULT_BUTTON_URL,
+                },
+                validate_send_confirmation=False,
+            )
+            messages.info(request, "فایل همین batch برای ارسال بازه بعدی آماده شد.")
+        else:
+            messages.error(request, "فایل ذخیره‌شده این batch پیدا نشد. باید فایل اکسل را دوباره انتخاب کنی.")
+
     if request.method == "POST":
         action = request.POST.get("action", "send")
         upload_form = UploadExcelForm(request.POST, request.FILES, validate_send_confirmation=(action == "send"))
@@ -177,6 +206,7 @@ def dashboard(request):
                     dry_run = upload_form.cleaned_data["send_mode"] == "dry_run"
                     batch = MessageBatch.objects.create(
                         source_file_name=uploaded_path.name,
+                        source_file_path=str(uploaded_path),
                         message_template=upload_form.cleaned_data["message_template"],
                         button_text=button_text or "",
                         button_url=button_url or "",
