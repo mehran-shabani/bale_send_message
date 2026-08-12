@@ -7,6 +7,7 @@ from uuid import uuid4
 import json
 import re
 import string
+from itertools import chain
 from zipfile import BadZipFile
 
 import requests
@@ -66,13 +67,21 @@ def _clean_header(value: object) -> str:
     return str(value or "").strip().replace("ي", "ی").replace("ك", "ک")
 
 
-def _find_header(headers: list[str], candidates: set[str], title: str) -> int:
+def _find_header(headers: list[str], candidates: set[str], title: str, *, required: bool = True) -> int | None:
     for i, h in enumerate(headers):
         if h in candidates:
             return i
+    if not required:
+        return None
     visible_headers = "، ".join(h for h in headers if h) or "بدون عنوان"
     accepted_headers = "، ".join(sorted(candidates))
     raise ValueError(f"ستون «{title}» در فایل اکسل پیدا نشد. عنوان‌های قابل قبول برای این ستون: {accepted_headers}. ستون‌های موجود: {visible_headers}")
+
+
+def _cell_text(row: tuple, index: int | None) -> str:
+    if index is None or index >= len(row):
+        return ""
+    return str(row[index] or "").strip()
 
 
 def validate_message_template(template: str) -> None:
@@ -113,22 +122,39 @@ def read_excel_recipients(file_path: str | Path, sheet_name: str | None = None) 
 
     rows = ws.iter_rows(values_only=True)
     try:
-        headers = [_clean_header(x) for x in next(rows)]
+        first_row = next(rows)
     except StopIteration as exc:
-        raise ValueError("فایل اکسل خالی است و ردیف header ندارد.") from exc
+        raise ValueError("فایل اکسل خالی است.") from exc
 
+    headers = [_clean_header(x) for x in first_row]
     if not any(headers):
-        raise ValueError("ردیف اول فایل اکسل باید header ستون‌ها باشد، اما خالی است.")
+        raise ValueError("ردیف اول فایل اکسل باید header یا شماره موبایل باشد، اما خالی است.")
 
-    first_idx = _find_header(headers, {"نام", "اسم", "first_name"}, "نام")
-    last_idx = _find_header(headers, {"نام خانوادگی", "فامیلی", "last_name"}, "نام خانوادگی")
-    phone_idx = _find_header(headers, {"موبایل", "شماره موبایل", "شماره همراه", "mobile", "phone"}, "موبایل")
+    phone_headers = {"موبایل", "شماره", "شماره موبایل", "شماره همراه", "mobile", "phone", "phone_number"}
+    phone_idx = _find_header(headers, phone_headers, "موبایل", required=False)
+    first_idx = _find_header(headers, {"نام", "اسم", "first_name"}, "نام", required=False)
+    last_idx = _find_header(headers, {"نام خانوادگی", "فامیلی", "last_name"}, "نام خانوادگی", required=False)
+
+    # A one-column workbook may contain phone numbers without a header at all.
+    # In that case the first row is data and must not be discarded.
+    if phone_idx is None:
+        nonempty_indices = [i for i, value in enumerate(first_row) if str(value or "").strip()]
+        if len(nonempty_indices) == 1 and normalize_iran_mobile(first_row[nonempty_indices[0]]):
+            phone_idx = nonempty_indices[0]
+            first_idx = None
+            last_idx = None
+            data_rows = chain([(1, first_row)], enumerate(rows, start=2))
+        else:
+            _find_header(headers, phone_headers, "موبایل")
+            raise AssertionError("unreachable")
+    else:
+        data_rows = enumerate(rows, start=2)
 
     result: list[ExcelRecipient] = []
-    for row_number, row in enumerate(rows, start=2):
-        first_name = str(row[first_idx] or "").strip()
-        last_name = str(row[last_idx] or "").strip()
-        raw_phone = str(row[phone_idx] or "").strip()
+    for row_number, row in data_rows:
+        first_name = _cell_text(row, first_idx)
+        last_name = _cell_text(row, last_idx)
+        raw_phone = _cell_text(row, phone_idx)
         if not any([first_name, last_name, raw_phone]):
             continue
         result.append(

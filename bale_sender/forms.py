@@ -17,7 +17,7 @@ class UploadExcelForm(forms.Form):
         label="متن پیام",
         widget=forms.Textarea(attrs={"rows": 8}),
         initial="سلام {full_name}\nثبت‌نام و انتقال پزشک خانواده به درمانگاه ولیعصر صغاد از طریق سایت زیر انجام می‌شود:\nhttps://helssa.ir\nلغو11",
-        help_text="متغیرها: {first_name}، {last_name}، {full_name}، {phone}",
+        help_text="می‌توانی یک متن کاملاً ثابت بنویسی. متغیرهای اختیاری: {first_name}، {last_name}، {full_name}، {phone}",
     )
     send_mode = forms.ChoiceField(label="نوع اجرا", choices=SEND_MODES, initial="dry_run", widget=forms.RadioSelect)
     confirm_real_send = forms.BooleanField(label="تأیید می‌کنم ارسال واقعی انجام شود", required=False)

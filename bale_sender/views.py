@@ -78,6 +78,18 @@ def _bounded_int(value: object, *, default: int, minimum: int, maximum: int) -> 
     return max(minimum, min(number, maximum))
 
 
+def _pricing_context(preview: dict | None = None) -> dict:
+    unit_price = max(int(getattr(settings, "BALE_MESSAGE_PRICE_RIAL", 0) or 0), 0)
+    estimated_cost = unit_price * preview["valid_rows"] if unit_price and preview else None
+    return {
+        "is_configured": bool(unit_price),
+        "unit_price_rial": unit_price,
+        "unit_price_display": f"{unit_price:,}",
+        "estimated_cost_rial": estimated_cost,
+        "estimated_cost_display": f"{estimated_cost:,}" if estimated_cost is not None else "",
+    }
+
+
 def _recipients_report_response(recipients, *, filename: str, title: str) -> HttpResponse:
     wb = Workbook()
     ws = wb.active
@@ -241,6 +253,7 @@ def dashboard(request):
         {
             "form": upload_form,
             "preview": preview,
+            "pricing": _pricing_context(preview),
             "recent_batches": recent_batches,
         },
     )

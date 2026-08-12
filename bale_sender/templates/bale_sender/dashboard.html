@@ -63,6 +63,9 @@
           <div class="stat stat-success"><span>آماده ارسال</span><b>{{ preview.valid_rows }}</b></div>
           <div class="stat stat-error"><span>شماره نامعتبر</span><b>{{ preview.invalid_rows }}</b></div>
           <div class="stat stat-warning"><span>تکراری</span><b>{{ preview.duplicate_rows }}</b></div>
+          {% if pricing.is_configured %}
+            <div class="stat"><span>برآورد هزینه این ارسال</span><b>{{ pricing.estimated_cost_display }} ریال</b></div>
+          {% endif %}
         </div>
         {% if not preview.is_sendable %}
           <div class="alert alert-danger">هیچ ردیف قابل ارسالی پیدا نشد.</div>
@@ -168,10 +171,24 @@
       <section class="card compact">
         <h3>نیازمندی فایل</h3>
         <div class="quick-guide">
-          <div class="guide-item"><b>ستون‌ها</b><span class="muted">نام، نام خانوادگی، موبایل</span></div>
-          <div class="guide-item"><b>متغیرهای پیام</b><span class="muted"><code>{first_name}</code> <code>{last_name}</code> <code>{full_name}</code> <code>{phone}</code></span></div>
+          <div class="guide-item"><b>ستون اجباری</b><span class="muted">فقط موبایل؛ ستون‌های نام و نام خانوادگی اختیاری‌اند.</span></div>
+          <div class="guide-item"><b>فایل تک‌ستونه</b><span class="muted">هم با عنوان «موبایل» و هم بدون header پذیرفته می‌شود.</span></div>
+          <div class="guide-item"><b>متن ثابت</b><span class="muted">استفاده از متغیرها الزامی نیست. متغیرهای اختیاری: <code>{first_name}</code> <code>{last_name}</code> <code>{full_name}</code> <code>{phone}</code></span></div>
           <div class="guide-item"><b>تست سریع</b><a class="btn ghost" href="{% url 'bale_single_test' %}" style="margin-top:8px">ارسال تست تک‌نفره</a></div>
         </div>
+      </section>
+
+      <section class="card compact">
+        <h3>هزینه پیام</h3>
+        {% if pricing.is_configured %}
+          <div class="quick-guide">
+            <div class="guide-item"><b>تعرفه تنظیم‌شده</b><span>{{ pricing.unit_price_display }} ریال برای هر ارسال موفق</span></div>
+            {% if preview %}<div class="guide-item"><b>برآورد این فایل</b><span>{{ pricing.estimated_cost_display }} ریال برای {{ preview.valid_rows }} شماره آماده ارسال</span></div>{% endif %}
+          </div>
+          <p class="helptext">این مبلغ برآوردی است؛ مبلغ قطعی را پنل سفیر تعیین می‌کند.</p>
+        {% else %}
+          <div class="alert alert-info">API سفیر تعرفه یا مانده اعتبار را برنمی‌گرداند. برای نمایش برآورد، تعرفه فعلی حسابت را در <code>BALE_MESSAGE_PRICE_RIAL</code> تنظیم کن.</div>
+        {% endif %}
       </section>
 
       <section class="card compact">

@@ -51,11 +51,40 @@ class ExcelTests(TestCase):
         tmp = Path(tempfile.mkdtemp()) / "missing.xlsx"
         wb = Workbook()
         ws = wb.active
-        ws.append(["نام", "موبایل"])
+        ws.append(["نام", "شهر"])
         wb.save(tmp)
 
-        with self.assertRaisesMessage(ValueError, "ستون «نام خانوادگی»"):
+        with self.assertRaisesMessage(ValueError, "ستون «موبایل»"):
             read_excel_recipients(tmp)
+
+    def test_read_recipients_accepts_phone_only_with_header_and_fixed_message(self):
+        tmp = Path(tempfile.mkdtemp()) / "phone_only.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["موبایل"])
+        ws.append([TEST_PHONE_LOCAL])
+        wb.save(tmp)
+
+        rows = read_excel_recipients(tmp)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].first_name, "")
+        self.assertEqual(rows[0].last_name, "")
+        self.assertEqual(rows[0].normalized_phone, TEST_PHONE_STD)
+        self.assertEqual(render_message("این یک پیام ثابت است", rows[0]), "این یک پیام ثابت است")
+
+    def test_read_recipients_accepts_headerless_phone_only_file(self):
+        tmp = Path(tempfile.mkdtemp()) / "phone_only_no_header.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append([TEST_PHONE_LOCAL])
+        ws.append(["09120000001"])
+        wb.save(tmp)
+
+        rows = read_excel_recipients(tmp)
+
+        self.assertEqual([row.row_number for row in rows], [1, 2])
+        self.assertEqual([row.normalized_phone for row in rows], [TEST_PHONE_STD, "989120000001"])
 
     def test_read_recipients_empty_header_message(self):
         tmp = Path(tempfile.mkdtemp()) / "empty_header.xlsx"
@@ -347,6 +376,15 @@ class ReportViewTests(TestCase):
         self.assertTrue(form.initial["uploaded_file_token"])
         self.assertEqual(form.initial["message_template"], "سلام {full_name}")
         self.assertEqual(form.initial["range_start"], 101)
+
+    @override_settings(BALE_MESSAGE_PRICE_RIAL=160)
+    def test_dashboard_shows_configured_message_price(self):
+        response = self.client.get(reverse("bale_dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["pricing"]["is_configured"])
+        self.assertEqual(response.context["pricing"]["unit_price_rial"], 160)
+        self.assertContains(response, "160 ریال")
 
     def test_cancel_batch_view_marks_running_batch_for_stop(self):
         batch = MessageBatch.objects.create(
