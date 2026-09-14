@@ -1,3 +1,4 @@
+import json
 import logging
 from io import BytesIO
 from pathlib import Path
@@ -6,8 +7,8 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib import messages
-from django.core.paginator import Paginator
 from django.core import signing
+from django.core.paginator import Paginator
 from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
@@ -15,10 +16,16 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from openpyxl import Workbook
 
-from .forms import SingleMessageTestForm, UploadExcelForm
-from .models import MessageBatch, MessageRecipient
-from .core import build_excel_preview, cancel_batch_immediately, process_excel_batch, send_single_recipient_test
-
+from .core import (
+    build_excel_preview,
+    cancel_batch_immediately,
+    effective_configuration,
+    inspect_excel,
+    process_excel_batch,
+    send_single_recipient_test,
+)
+from .forms import SafirConfigurationForm, SingleMessageTestForm, UploadExcelForm
+from .models import MessageBatch, MessageRecipient, SafirConfiguration
 
 logger = logging.getLogger(__name__)
 DEFAULT_REPORT_PAGE_SIZE = 100
@@ -26,47 +33,72 @@ MAX_REPORT_PAGE_SIZE = 500
 DEFAULT_EXPORT_LIMIT = 1000
 MAX_EXPORT_LIMIT = 10000
 
+
 def _run_batch_in_background(batch_id: int, file_path: str, options: dict) -> None:
     close_old_connections()
     try:
         batch = MessageBatch.objects.get(pk=batch_id)
         process_excel_batch(batch=batch, file_path=file_path, **options)
-    except Exception as exc:
+    except Exception:
         # process_excel_batch stores the readable failure message on the batch.
-        logger.exception("Error processing batch %s in background: %s", batch_id, exc)
+        logger.exception("Error processing batch %s in background", batch_id)
     finally:
         close_old_connections()
 
-def _save_uploaded_file(uploaded) -> Path:
-    upload_dir = Path(settings.BASE_DIR) / "uploads" / timezone.localtime().strftime("%Y%m%d")
+
+def _save_uploaded_file(uploaded, category: str = "excel") -> Path:
+    upload_dir = (
+        Path(settings.BASE_DIR)
+        / "uploads"
+        / category
+        / timezone.localtime().strftime("%Y%m%d")
+    )
     upload_dir.mkdir(parents=True, exist_ok=True)
     safe_name = Path(uploaded.name).name.replace(" ", "_")
     file_path = upload_dir / f"{uuid4().hex[:10]}_{safe_name}"
     with open(file_path, "wb+") as dest:
-        for chunk in uploaded.chunks():
-            dest.write(chunk)
+        dest.writelines(uploaded.chunks())
     return file_path
 
 
-def _make_upload_token(file_path: Path) -> str:
-    return signing.dumps({"path": str(file_path.resolve()), "name": file_path.name}, salt="bale-upload-preview")
+def _make_upload_token(file_path: Path, category: str = "excel") -> str:
+    return signing.dumps(
+        {
+            "path": str(file_path.resolve()),
+            "name": file_path.name,
+            "category": category,
+        },
+        salt="bale-upload-preview",
+    )
 
 
-def _resolve_upload_token(token: str) -> Path:
+def _resolve_upload_token(token: str, expected_category: str = "excel") -> Path:
     try:
         data = signing.loads(token, salt="bale-upload-preview", max_age=60 * 60 * 6)
     except signing.BadSignature as exc:
-        raise ValueError("فایل پیش‌نمایش معتبر نیست یا زمان آن تمام شده است. لطفاً فایل اکسل را دوباره انتخاب کن.") from exc
+        raise ValueError(
+            "فایل پیش‌نمایش معتبر نیست یا زمان آن تمام شده است. لطفاً فایل اکسل را دوباره انتخاب کن."
+        ) from exc
 
     path = Path(data.get("path", "")).resolve()
     uploads_root = (Path(settings.BASE_DIR) / "uploads").resolve()
-    if uploads_root not in path.parents or not path.exists():
-        raise ValueError("فایل ذخیره‌شده برای پیش‌نمایش پیدا نشد. لطفاً فایل اکسل را دوباره انتخاب کن.")
+    if (
+        uploads_root not in path.parents
+        or not path.exists()
+        or data.get("category", "excel") != expected_category
+    ):
+        raise ValueError(
+            "فایل ذخیره‌شده برای پیش‌نمایش پیدا نشد. لطفاً فایل اکسل را دوباره انتخاب کن."
+        )
     return path
 
 
 def _batch_stats(batch: MessageBatch) -> dict[str, int]:
-    counts = dict(batch.recipients.values("status").annotate(c=Count("id")).values_list("status", "c"))
+    counts = dict(
+        batch.recipients.values("status")
+        .annotate(c=Count("id"))
+        .values_list("status", "c")
+    )
     return {key: counts.get(key, 0) for key, _label in MessageRecipient.Status.choices}
 
 
@@ -79,18 +111,24 @@ def _bounded_int(value: object, *, default: int, minimum: int, maximum: int) -> 
 
 
 def _pricing_context(preview: dict | None = None) -> dict:
-    unit_price = max(int(getattr(settings, "BALE_MESSAGE_PRICE_RIAL", 0) or 0), 0)
-    estimated_cost = unit_price * preview["valid_rows"] if unit_price and preview else None
+    unit_price = max(int(effective_configuration()["message_price_rial"] or 0), 0)
+    estimated_cost = (
+        unit_price * preview["valid_rows"] if unit_price and preview else None
+    )
     return {
         "is_configured": bool(unit_price),
         "unit_price_rial": unit_price,
         "unit_price_display": f"{unit_price:,}",
         "estimated_cost_rial": estimated_cost,
-        "estimated_cost_display": f"{estimated_cost:,}" if estimated_cost is not None else "",
+        "estimated_cost_display": f"{estimated_cost:,}"
+        if estimated_cost is not None
+        else "",
     }
 
 
-def _recipients_report_response(recipients, *, filename: str, title: str) -> HttpResponse:
+def _recipients_report_response(
+    recipients, *, filename: str, title: str
+) -> HttpResponse:
     wb = Workbook()
     ws = wb.active
     ws.title = title[:31]
@@ -112,6 +150,9 @@ def _recipients_report_response(recipients, *, filename: str, title: str) -> Htt
             "کد API",
             "پیام API",
             "خطا",
+            "شناسه پیام",
+            "تلاش مجدد",
+            "متغیرها",
             "متن نهایی",
         ]
     )
@@ -134,11 +175,34 @@ def _recipients_report_response(recipients, *, filename: str, title: str) -> Htt
                 recipient.api_code,
                 recipient.api_message,
                 recipient.error_message,
+                recipient.message_id,
+                recipient.retry_count,
+                json.dumps(recipient.variables, ensure_ascii=False),
                 recipient.final_text,
             ]
         )
 
-    widths = [12, 26, 16, 20, 12, 16, 18, 24, 18, 18, 18, 10, 16, 30, 30, 50]
+    widths = [
+        12,
+        26,
+        16,
+        20,
+        12,
+        16,
+        18,
+        24,
+        18,
+        18,
+        18,
+        10,
+        16,
+        30,
+        30,
+        38,
+        12,
+        50,
+        50,
+    ]
     for index, width in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=index).column_letter].width = width
 
@@ -155,7 +219,14 @@ def _recipients_report_response(recipients, *, filename: str, title: str) -> Htt
 
 def dashboard(request):
     preview = None
-    upload_form = UploadExcelForm()
+    config = effective_configuration()
+    upload_form = UploadExcelForm(
+        global_variables=config["global_variables"],
+        initial={
+            "sleep_seconds": config["default_sleep_seconds"],
+            "max_retries": config["max_retries"],
+        },
+    )
 
     reuse_batch_id = request.GET.get("reuse_batch")
     if request.method == "GET" and reuse_batch_id:
@@ -167,70 +238,178 @@ def dashboard(request):
                 next_start = reuse_batch.range_start + reuse_batch.total_rows
             else:
                 next_start = (reuse_batch.total_rows or 0) + 1
+            initial = {
+                "uploaded_file_token": _make_upload_token(
+                    Path(reuse_batch.source_file_path), "excel"
+                ),
+                "message_type": reuse_batch.message_type,
+                "message_template": reuse_batch.message_template,
+                "template_id": reuse_batch.template_id,
+                "template_fields": json.dumps(
+                    reuse_batch.template_fields, ensure_ascii=False
+                ),
+                "otp_template": reuse_batch.otp_template,
+                "is_secure": reuse_batch.is_secure,
+                "copy_text_template": reuse_batch.copy_text_template,
+                "buttons_json": json.dumps(reuse_batch.buttons, ensure_ascii=False),
+                "sheet_name": reuse_batch.sheet_name,
+                "header_row": reuse_batch.header_row,
+                "phone_column": reuse_batch.phone_column,
+                "first_name_column": reuse_batch.first_name_column,
+                "last_name_column": reuse_batch.last_name_column,
+                "variable_mapping": json.dumps(
+                    reuse_batch.variable_mapping, ensure_ascii=False
+                ),
+                "send_mode": "dry_run",
+                "limit": reuse_batch.limit,
+                "range_start": next_start,
+                "sleep_seconds": reuse_batch.sleep_seconds,
+                "max_retries": reuse_batch.max_retries,
+                "skip_duplicates": reuse_batch.skip_duplicates,
+            }
+            if (
+                reuse_batch.attachment_path
+                and Path(reuse_batch.attachment_path).exists()
+            ):
+                initial["uploaded_attachment_token"] = _make_upload_token(
+                    Path(reuse_batch.attachment_path), "attachment"
+                )
             upload_form = UploadExcelForm(
                 initial={
-                    "uploaded_file_token": _make_upload_token(Path(reuse_batch.source_file_path)),
-                    "message_template": reuse_batch.message_template,
-                    "send_mode": "dry_run",
-                    "limit": reuse_batch.limit,
-                    "range_start": next_start,
-                    "sleep_seconds": settings.BALE_DEFAULT_SLEEP_SECONDS,
-                    "skip_duplicates": True,
-                    "button_enabled": bool(reuse_batch.button_text and reuse_batch.button_url),
-                    "button_text": reuse_batch.button_text or settings.BALE_DEFAULT_BUTTON_TEXT,
-                    "button_url": reuse_batch.button_url or settings.BALE_DEFAULT_BUTTON_URL,
+                    **initial,
                 },
                 validate_send_confirmation=False,
+                global_variables=config["global_variables"],
             )
             messages.info(request, "فایل همین batch برای ارسال بازه بعدی آماده شد.")
         else:
-            messages.error(request, "فایل ذخیره‌شده این batch پیدا نشد. باید فایل اکسل را دوباره انتخاب کنی.")
+            messages.error(
+                request,
+                "فایل ذخیره‌شده این batch پیدا نشد. باید فایل اکسل را دوباره انتخاب کنی.",
+            )
 
     if request.method == "POST":
         action = request.POST.get("action", "send")
-        upload_form = UploadExcelForm(request.POST, request.FILES, validate_send_confirmation=(action == "send"))
+        upload_form = UploadExcelForm(
+            request.POST,
+            request.FILES,
+            validate_send_confirmation=(action == "send"),
+            global_variables=config["global_variables"],
+        )
         if upload_form.is_valid():
             try:
                 uploaded = upload_form.cleaned_data.get("excel_file")
                 if uploaded:
-                    uploaded_path = _save_uploaded_file(uploaded)
+                    uploaded_path = _save_uploaded_file(uploaded, "excel")
                 else:
-                    uploaded_path = _resolve_upload_token(upload_form.cleaned_data["uploaded_file_token"])
+                    uploaded_path = _resolve_upload_token(
+                        upload_form.cleaned_data["uploaded_file_token"], "excel"
+                    )
+                attachment = upload_form.cleaned_data.get("attachment")
+                if attachment:
+                    attachment_path = _save_uploaded_file(attachment, "attachment")
+                elif upload_form.cleaned_data.get("uploaded_attachment_token"):
+                    attachment_path = _resolve_upload_token(
+                        upload_form.cleaned_data["uploaded_attachment_token"],
+                        "attachment",
+                    )
+                else:
+                    attachment_path = None
+
+                common_options = {
+                    "message_type": upload_form.cleaned_data["message_type"],
+                    "message_template": upload_form.cleaned_data.get("message_template")
+                    or "",
+                    "template_id": upload_form.cleaned_data.get("template_id") or "",
+                    "template_fields": upload_form.cleaned_data.get("template_fields")
+                    or {},
+                    "otp_template": upload_form.cleaned_data.get("otp_template") or "",
+                    "is_secure": upload_form.cleaned_data.get("is_secure", False),
+                    "copy_text_template": upload_form.cleaned_data.get(
+                        "copy_text_template"
+                    )
+                    or "",
+                    "buttons": upload_form.cleaned_data.get("buttons_json") or [],
+                    "attachment_path": str(attachment_path) if attachment_path else "",
+                }
 
                 if action == "preview":
-                    upload_token = _make_upload_token(uploaded_path)
                     preview = build_excel_preview(
                         uploaded_path,
                         sheet_name=upload_form.cleaned_data["sheet_name"] or None,
-                        message_template=upload_form.cleaned_data["message_template"],
+                        message_template=upload_form.cleaned_data.get(
+                            "message_template"
+                        )
+                        or "",
                         limit=10,
                         range_start=upload_form.cleaned_data["range_start"],
                         range_end=upload_form.cleaned_data["range_end"],
+                        header_row=upload_form.cleaned_data["header_row"],
+                        phone_column=upload_form.cleaned_data["phone_column"] or None,
+                        first_name_column=upload_form.cleaned_data["first_name_column"]
+                        or None,
+                        last_name_column=upload_form.cleaned_data["last_name_column"]
+                        or None,
+                        variable_mapping=upload_form.cleaned_data["variable_mapping"],
+                        global_variables=config["global_variables"],
+                        batch_options=common_options,
                     )
+                    if preview.get("inspection") is None:
+                        try:
+                            preview["inspection"] = inspect_excel(
+                                uploaded_path,
+                                upload_form.cleaned_data["sheet_name"] or None,
+                                upload_form.cleaned_data["header_row"],
+                            )
+                        except ValueError:
+                            pass
                     preview["file_name"] = uploaded_path.name
                     post_data = request.POST.copy()
-                    post_data["uploaded_file_token"] = upload_token
-                    upload_form = UploadExcelForm(post_data, validate_send_confirmation=False)
+                    post_data["uploaded_file_token"] = _make_upload_token(
+                        uploaded_path, "excel"
+                    )
+                    if attachment_path:
+                        post_data["uploaded_attachment_token"] = _make_upload_token(
+                            attachment_path, "attachment"
+                        )
+                    upload_form = UploadExcelForm(
+                        post_data,
+                        validate_send_confirmation=False,
+                        global_variables=config["global_variables"],
+                    )
                     messages.success(request, "پیش‌نمایش آماده شد.")
                 else:
-                    button_text = upload_form.cleaned_data["button_text"] if upload_form.cleaned_data["button_enabled"] else None
-                    button_url = upload_form.cleaned_data["button_url"] if upload_form.cleaned_data["button_enabled"] else None
                     dry_run = upload_form.cleaned_data["send_mode"] == "dry_run"
+                    if not dry_run and (
+                        not config["api_access_key"] or not config["bot_id"]
+                    ):
+                        raise ValueError(
+                            "برای ارسال واقعی ابتدا کلید API و شناسه بازو را در تنظیمات وارد کن."
+                        )
                     batch = MessageBatch.objects.create(
                         source_file_name=uploaded_path.name,
                         source_file_path=str(uploaded_path),
-                        message_template=upload_form.cleaned_data["message_template"],
-                        button_text=button_text or "",
-                        button_url=button_url or "",
+                        sheet_name=upload_form.cleaned_data["sheet_name"] or "",
+                        header_row=upload_form.cleaned_data["header_row"],
+                        phone_column=upload_form.cleaned_data["phone_column"] or "",
+                        first_name_column=upload_form.cleaned_data["first_name_column"]
+                        or "",
+                        last_name_column=upload_form.cleaned_data["last_name_column"]
+                        or "",
+                        variable_mapping=upload_form.cleaned_data["variable_mapping"],
+                        global_variables=config["global_variables"],
                         dry_run=dry_run,
                         limit=upload_form.cleaned_data["limit"],
                         range_start=upload_form.cleaned_data["range_start"],
                         range_end=upload_form.cleaned_data["range_end"],
+                        sleep_seconds=upload_form.cleaned_data["sleep_seconds"]
+                        if upload_form.cleaned_data["sleep_seconds"] is not None
+                        else config["default_sleep_seconds"],
+                        max_retries=upload_form.cleaned_data["max_retries"],
+                        skip_duplicates=upload_form.cleaned_data["skip_duplicates"],
+                        **common_options,
                     )
                     options = {
-                        "sleep_seconds": upload_form.cleaned_data["sleep_seconds"],
-                        "sheet_name": upload_form.cleaned_data["sheet_name"] or None,
-                        "skip_duplicates": upload_form.cleaned_data["skip_duplicates"],
                         "range_start": upload_form.cleaned_data["range_start"],
                         "range_end": upload_form.cleaned_data["range_end"],
                     }
@@ -255,6 +434,27 @@ def dashboard(request):
             "preview": preview,
             "pricing": _pricing_context(preview),
             "recent_batches": recent_batches,
+            "config_ready": bool(config["api_access_key"] and config["bot_id"]),
+            "global_variables": config["global_variables"],
+        },
+    )
+
+
+def safir_settings(request):
+    configuration = SafirConfiguration.load()
+    form = SafirConfigurationForm(request.POST or None, instance=configuration)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "تنظیمات محلی سفیر ذخیره شد.")
+        return redirect("bale_settings")
+    effective = effective_configuration()
+    return render(
+        request,
+        "bale_sender/settings.html",
+        {
+            "form": form,
+            "has_api_key": bool(effective["api_access_key"]),
+            "config": effective,
         },
     )
 
@@ -262,8 +462,16 @@ def dashboard(request):
 def single_test(request):
     form = SingleMessageTestForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        button_text = form.cleaned_data["button_text"] if form.cleaned_data["button_enabled"] else None
-        button_url = form.cleaned_data["button_url"] if form.cleaned_data["button_enabled"] else None
+        button_text = (
+            form.cleaned_data["button_text"]
+            if form.cleaned_data["button_enabled"]
+            else None
+        )
+        button_url = (
+            form.cleaned_data["button_url"]
+            if form.cleaned_data["button_enabled"]
+            else None
+        )
         batch = send_single_recipient_test(
             first_name=form.cleaned_data["first_name"],
             last_name=form.cleaned_data["last_name"],
@@ -312,9 +520,7 @@ def batch_detail(request, batch_id):
 
 def batch_live_status(request, batch_id):
     batch = get_object_or_404(MessageBatch, pk=batch_id)
-    recent_recipients = (
-        batch.recipients.order_by("-created_at", "-id")[:10]
-    )
+    recent_recipients = batch.recipients.order_by("-created_at", "-id")[:10]
     stats = _batch_stats(batch)
     return JsonResponse(
         {
@@ -323,7 +529,9 @@ def batch_live_status(request, batch_id):
                 "status": batch.status,
                 "status_label": batch.get_status_display(),
                 "cancel_requested": batch.cancel_requested,
-                "is_active": batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING} and not batch.cancel_requested,
+                "is_active": batch.status
+                in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING}
+                and not batch.cancel_requested,
                 "total_rows": sum(stats.values()),
                 "total_sent": stats[MessageRecipient.Status.SENT],
                 "total_failed": stats[MessageRecipient.Status.FAILED],
@@ -331,7 +539,9 @@ def batch_live_status(request, batch_id):
                 "total_duplicate": stats[MessageRecipient.Status.DUPLICATE],
                 "total_not_bale_user": stats[MessageRecipient.Status.NOT_BALE_USER],
                 "total_rate_limited": stats[MessageRecipient.Status.RATE_LIMITED],
-                "total_payment_required": stats[MessageRecipient.Status.PAYMENT_REQUIRED],
+                "total_payment_required": stats[
+                    MessageRecipient.Status.PAYMENT_REQUIRED
+                ],
                 "total_config_error": stats[MessageRecipient.Status.CONFIG_ERROR],
             },
             "recent_recipients": [
@@ -342,13 +552,17 @@ def batch_live_status(request, batch_id):
                     "status": r.status,
                     "status_label": r.get_status_display(),
                     "http_status": r.http_status or "",
+                    "retry_count": r.retry_count,
                     "api_code": r.api_code,
-                    "message": " ".join(x for x in [r.api_message, r.error_message] if x),
+                    "message": " ".join(
+                        x for x in [r.api_message, r.error_message] if x
+                    ),
                 }
                 for r in recent_recipients
             ],
         }
     )
+
 
 def cancel_batch(request, batch_id):
     if request.method != "POST":
@@ -358,9 +572,13 @@ def cancel_batch(request, batch_id):
     if batch.status in {MessageBatch.Status.PENDING, MessageBatch.Status.RUNNING}:
         try:
             cancel_batch_immediately(batch)
-        except Exception as exc:
-            logger.exception("Could not write cancellation report for batch %s: %s", batch.id, exc)
-            messages.error(request, "درخواست توقف ثبت شد، اما ساخت گزارش توقف با خطا روبه‌رو شد.")
+        except Exception:
+            logger.exception(
+                "Could not write cancellation report for batch %s", batch.id
+            )
+            messages.error(
+                request, "درخواست توقف ثبت شد، اما ساخت گزارش توقف با خطا روبه‌رو شد."
+            )
             return redirect("bale_batch_detail", batch_id=batch.id)
         messages.warning(request, "درخواست توقف ثبت شد.")
     else:
@@ -377,7 +595,9 @@ def download_report(request, batch_id):
         report_path = Path(settings.BASE_DIR) / report_path
     if not report_path.exists():
         raise Http404("فایل گزارش پیدا نشد.")
-    return FileResponse(open(report_path, "rb"), as_attachment=True, filename=report_path.name)
+    return FileResponse(
+        open(report_path, "rb"), as_attachment=True, filename=report_path.name
+    )
 
 
 def download_recent_recipients_report(request):
@@ -387,10 +607,9 @@ def download_recent_recipients_report(request):
         minimum=1,
         maximum=MAX_EXPORT_LIMIT,
     )
-    recipients = (
-        MessageRecipient.objects.select_related("batch")
-        .order_by("-created_at", "-id")[:limit]
-    )
+    recipients = MessageRecipient.objects.select_related("batch").order_by(
+        "-created_at", "-id"
+    )[:limit]
     return _recipients_report_response(
         recipients,
         filename=f"bale_recent_{limit}_recipients.xlsx",

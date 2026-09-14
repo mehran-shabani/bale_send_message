@@ -51,6 +51,7 @@
         <a class="{% if request.resolver_match.url_name == 'bale_dashboard' %}active{% endif %}" href="{% url 'bale_dashboard' %}">ارسال اکسل <span>Excel</span></a>
         <a class="{% if request.resolver_match.url_name == 'bale_single_test' %}active{% endif %}" href="{% url 'bale_single_test' %}">تست تک‌نفره <span>Test</span></a>
         <a class="{% if request.resolver_match.url_name == 'bale_batch_list' or request.resolver_match.url_name == 'bale_batch_detail' %}active{% endif %}" href="{% url 'bale_batch_list' %}">گزارش‌ها <span>Logs</span></a>
+        <a class="{% if request.resolver_match.url_name == 'bale_settings' %}active{% endif %}" href="{% url 'bale_settings' %}">تنظیمات سفیر <span>Config</span></a>
         <a href="/admin/">ادمین <span>Admin</span></a>
       </nav>
     </aside>

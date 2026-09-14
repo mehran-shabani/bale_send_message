@@ -1,0 +1,61 @@
+{% extends "bale_sender/base.html" %}
+{% block title %}تنظیمات سفیر بله{% endblock %}
+{% block page_title %}تنظیمات محلی سفیر{% endblock %}
+{% block top_actions %}<a class="btn ghost" href="{% url 'bale_dashboard' %}">بازگشت به ارسال</a>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>اتصال و متغیرهای ثابت</h2>
+    <p>این صفحه لاگین ندارد و برای اجرای کاملاً لوکال طراحی شده است.</p>
+  </div>
+  {% if has_api_key and config.bot_id %}<span class="badge badge-success">اتصال تنظیم شده</span>{% else %}<span class="badge badge-error">تنظیمات ناقص</span>{% endif %}
+</div>
+<div class="layout">
+  <form method="post" class="stack">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="card">
+      <h2>احراز هویت سفیر</h2>
+      <div class="form-grid">
+        <div class="field">{{ form.api_access_key.label_tag }}{{ form.api_access_key }}<div class="helptext">{{ form.api_access_key.help_text }} {% if has_api_key %}اکنون یک کلید ذخیره/فعال است.{% endif %}</div>{{ form.api_access_key.errors }}</div>
+        <div class="field">{{ form.bot_id.label_tag }}{{ form.bot_id }}{{ form.bot_id.errors }}</div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>شبکه و پایداری</h2>
+      <div class="form-grid">
+        <div class="field">{{ form.send_url.label_tag }}{{ form.send_url }}{{ form.send_url.errors }}</div>
+        <div class="field">{{ form.upload_url.label_tag }}{{ form.upload_url }}{{ form.upload_url.errors }}</div>
+        <div class="field">{{ form.request_timeout.label_tag }}{{ form.request_timeout }}{{ form.request_timeout.errors }}</div>
+        <div class="field">{{ form.default_sleep_seconds.label_tag }}{{ form.default_sleep_seconds }}{{ form.default_sleep_seconds.errors }}</div>
+        <div class="field">{{ form.max_retries.label_tag }}{{ form.max_retries }}{{ form.max_retries.errors }}</div>
+        <div class="field">{{ form.message_price_rial.label_tag }}{{ form.message_price_rial }}<div class="helptext">صفر یعنی برآورد هزینه نمایش داده نشود.</div>{{ form.message_price_rial.errors }}</div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>متغیرهای ثابت سراسری</h2>
+      <div class="field">{{ form.global_variables_text.label_tag }}{{ form.global_variables_text }}<div class="helptext">{{ form.global_variables_text.help_text }}</div>{{ form.global_variables_text.errors }}</div>
+      <p class="helptext">این مقادیر هنگام ساخت هر کمپین در همان گزارش snapshot می‌شوند؛ تغییر بعدی، گزارش قبلی را عوض نمی‌کند.</p>
+      <div class="actions"><button type="submit">ذخیره تنظیمات</button></div>
+    </section>
+  </form>
+  <aside class="stack">
+    <section class="card compact">
+      <h3>آدرس‌های رسمی</h3>
+      <div class="quick-guide">
+        <div class="guide-item"><b>ارسال</b><code>https://safir.bale.ai/api/v3/send_message</code></div>
+        <div class="guide-item"><b>آپلود</b><code>https://safir.bale.ai/api/v3/upload_file</code></div>
+      </div>
+    </section>
+    <section class="card compact">
+      <h3>نکته امنیتی مهم</h3>
+      <p>کلید در SQLite همین رایانه ذخیره می‌شود. سرور را فقط روی <code>127.0.0.1</code> اجرا کن و پورت را روی اینترنت باز نکن.</p>
+      <p>کلید در خروجی اکسل و صفحه گزارش نمایش داده نمی‌شود.</p>
+    </section>
+    <section class="card compact">
+      <h3>رفتار تلاش مجدد</h3>
+      <p>فقط خطاهای موقت مانند 429 و 5xx تکرار می‌شوند و همان <code>request_id</code> حفظ می‌شود تا سفیر پیام را دوباره نفرستد.</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

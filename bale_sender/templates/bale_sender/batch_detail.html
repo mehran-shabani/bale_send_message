@@ -24,6 +24,8 @@
       {% if batch.range_start or batch.range_end %}
         <span class="badge badge-muted">بازه داده: {{ batch.range_start|default:"۱" }} تا {{ batch.range_end|default:"آخر" }}</span>
       {% endif %}
+      <span class="badge badge-muted">{{ batch.get_message_type_display }}</span>
+      {% if batch.is_secure %}<span class="badge badge-warning">رمزدار</span>{% endif %}
       <span id="batch-status-badge" class="badge badge-{{ batch.status }}">{{ batch.get_status_display }}</span>
     </p>
   </div>
@@ -67,7 +69,7 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>HTTP</th><th>پیام/خطا</th></tr></thead>
+        <thead><tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>HTTP</th><th>تلاش مجدد</th><th>پیام/خطا</th></tr></thead>
         <tbody id="live-recipients-body">
           {% for r in recipients|slice:":10" %}
             <tr>
@@ -76,10 +78,11 @@
               <td class="ltr">{{ r.normalized_phone }}</td>
               <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
               <td>{{ r.http_status|default:"" }}</td>
+              <td>{{ r.retry_count }}</td>
               <td>{{ r.api_message }} {{ r.error_message }}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>
+            <tr><td colspan="7" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -150,7 +153,7 @@
 
   function renderRows(rows) {
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">هنوز ارسالی ثبت نشده است.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function(row) {
@@ -160,6 +163,7 @@
         '<td class="ltr">' + escapeHtml(row.normalized_phone) + '</td>' +
         '<td><span class="badge badge-' + escapeHtml(row.status) + '">' + escapeHtml(row.status_label) + '</span></td>' +
         '<td>' + escapeHtml(row.http_status) + '</td>' +
+        '<td>' + escapeHtml(row.retry_count) + '</td>' +
         '<td>' + escapeHtml(row.message) + '</td>' +
       '</tr>';
     }).join('');
