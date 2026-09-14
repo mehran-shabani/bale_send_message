@@ -1,5 +1,6 @@
-from pathlib import Path
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -7,7 +8,9 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-secret-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
+ALLOWED_HOSTS = [
+    h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -65,14 +68,23 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 BALE_SEND_URL = os.getenv("BALE_SEND_URL", "https://safir.bale.ai/api/v3/send_message")
+BALE_UPLOAD_URL = os.getenv(
+    "BALE_UPLOAD_URL", "https://safir.bale.ai/api/v3/upload_file"
+)
 BALE_API_ACCESS_KEY = os.getenv("BALE_API_ACCESS_KEY", "")
 BALE_BOT_ID = int(os.getenv("BALE_BOT_ID", "0") or 0)
 BALE_REQUEST_TIMEOUT = int(os.getenv("BALE_REQUEST_TIMEOUT", "20") or 20)
-BALE_DEFAULT_SLEEP_SECONDS = float(os.getenv("BALE_DEFAULT_SLEEP_SECONDS", "0.4") or 0.4)
+BALE_DEFAULT_SLEEP_SECONDS = float(
+    os.getenv("BALE_DEFAULT_SLEEP_SECONDS", "0.4") or 0.4
+)
 BALE_DEFAULT_BUTTON_TEXT = os.getenv("BALE_DEFAULT_BUTTON_TEXT", "ثبت‌نام در سایت")
 BALE_DEFAULT_BUTTON_URL = os.getenv("BALE_DEFAULT_BUTTON_URL", "https://helssa.ir")
 # Safir does not expose a documented pricing/balance endpoint. Set the current
 # account tariff here to show a pre-send estimate in the dashboard; 0 disables it.
 BALE_MESSAGE_PRICE_RIAL = int(os.getenv("BALE_MESSAGE_PRICE_RIAL", "0") or 0)
+BALE_MAX_RETRIES = int(os.getenv("BALE_MAX_RETRIES", "2") or 2)
 
 BALE_MAX_UPLOAD_SIZE_MB = int(os.getenv("BALE_MAX_UPLOAD_SIZE_MB", "10") or 10)
+BALE_MAX_ATTACHMENT_SIZE_MB = int(
+    os.getenv("BALE_MAX_ATTACHMENT_SIZE_MB", "100") or 100
+)

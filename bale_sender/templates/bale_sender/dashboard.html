@@ -1,217 +1,298 @@
 {% extends "bale_sender/base.html" %}
-{% block title %}ارسال اکسل{% endblock %}
-{% block page_title %}ارسال از فایل اکسل{% endblock %}
+{% block title %}ارسال هوشمند سفیر بله{% endblock %}
+{% block page_title %}ارسال هوشمند سفیر بله{% endblock %}
 {% block top_actions %}
-  <a class="btn ghost" href="{% url 'bale_single_test' %}">تست تک‌نفره</a>
-  <a class="btn ghost" href="{% url 'bale_batch_list' %}">گزارش‌ها</a>
+  <a class="btn ghost" href="{% url 'bale_settings' %}">تنظیمات سفیر</a>
+  <a class="btn ghost" href="https://docs.bale.ai/safir" target="_blank" rel="noopener">مستندات رسمی</a>
 {% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h2>ارسال گروهی</h2>
-    <p>فایل را بررسی کن، ۱۰ ردیف اول را ببین، بعد پردازش را شروع کن.</p>
+    <h2>کمپین جدید</h2>
+    <p>اکسل را بخوان، هر تعداد متغیر بساز، خروجی هر نفر را ببین و سپس ارسال کن.</p>
   </div>
+  {% if config_ready %}
+    <span class="badge badge-success">سفیر آماده است</span>
+  {% else %}
+    <a class="badge badge-error" href="{% url 'bale_settings' %}">کلید API یا شناسه بازو ناقص است</a>
+  {% endif %}
 </div>
 
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data" id="campaign-form">
   {% csrf_token %}
   {{ form.uploaded_file_token }}
-  {{ form.non_field_errors }}
+  {{ form.uploaded_attachment_token }}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
 
   <div class="layout">
     <div class="stack">
       <section class="card">
-        <div class="section-title">
-          <h2><span class="step">۱</span>فایل و متن پیام</h2>
-        </div>
-
+        <div class="section-title"><h2><span class="step">۱</span>فایل و ستون‌ها</h2></div>
         <div class="form-grid">
-          <div class="field">
-            {{ form.excel_file.label_tag }}
-            {{ form.excel_file }}
-            {% for error in form.excel_file.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          <div class="field">{{ form.excel_file.label_tag }}{{ form.excel_file }}{{ form.excel_file.errors }}</div>
+          <div class="field">{{ form.sheet_name.label_tag }}{{ form.sheet_name }}<div class="helptext">{{ form.sheet_name.help_text }}</div>{{ form.sheet_name.errors }}</div>
+          <div class="field">{{ form.header_row.label_tag }}{{ form.header_row }}<div class="helptext">{{ form.header_row.help_text }}</div>{{ form.header_row.errors }}</div>
+          <div class="field">{{ form.phone_column.label_tag }}{{ form.phone_column }}<div class="helptext">{{ form.phone_column.help_text }}</div>{{ form.phone_column.errors }}</div>
+          <div class="field">{{ form.first_name_column.label_tag }}{{ form.first_name_column }}<div class="helptext">{{ form.first_name_column.help_text }}</div>{{ form.first_name_column.errors }}</div>
+          <div class="field">{{ form.last_name_column.label_tag }}{{ form.last_name_column }}<div class="helptext">{{ form.last_name_column.help_text }}</div>{{ form.last_name_column.errors }}</div>
+        </div>
+        {% if form.uploaded_file_token.value %}<div class="alert alert-info">فایل پیش‌نمایش‌شده نگه‌داری شده و آماده ارسال است.</div>{% endif %}
+        <div class="field" style="margin-top:14px">
+          {{ form.variable_mapping.label_tag }}
+          <div id="variable-builder" class="builder"></div>
+          <button class="ghost small-button" type="button" id="add-variable">+ افزودن متغیر</button>
+          <details>
+            <summary>نمایش/ویرایش JSON پیشرفته</summary>
+            {{ form.variable_mapping }}
+            <div class="helptext">{{ form.variable_mapping.help_text }}</div>
+          </details>
+          {{ form.variable_mapping.errors }}
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title"><h2><span class="step">۲</span>نوع و محتوای پیام</h2></div>
+        <div class="form-grid">
+          <div class="field">{{ form.message_type.label_tag }}{{ form.message_type }}{{ form.message_type.errors }}</div>
+          <div class="field checkline">{{ form.is_secure.label_tag }}{{ form.is_secure }}<div class="helptext">{{ form.is_secure.help_text }}</div>{{ form.is_secure.errors }}</div>
+        </div>
+        <div data-message-section="text" class="stack message-panel">
+          <div class="field">{{ form.message_template.label_tag }}{{ form.message_template }}<div class="helptext">{{ form.message_template.help_text }}</div>{{ form.message_template.errors }}</div>
+          <div class="form-grid">
+            <div class="field">{{ form.attachment.label_tag }}{{ form.attachment }}<div class="helptext">{{ form.attachment.help_text }}</div>{{ form.attachment.errors }}</div>
+            <div class="field">{{ form.copy_text_template.label_tag }}{{ form.copy_text_template }}<div class="helptext">{{ form.copy_text_template.help_text }}</div>{{ form.copy_text_template.errors }}</div>
           </div>
+          {% if form.uploaded_attachment_token.value %}<div class="alert alert-info">فایل پیوست پیش‌نمایش‌شده نگه‌داری شده است.</div>{% endif %}
           <div class="field">
-            {{ form.sheet_name.label_tag }}
-            {{ form.sheet_name }}
-            {% if form.sheet_name.help_text %}<div class="helptext">{{ form.sheet_name.help_text }}</div>{% endif %}
-            {% for error in form.sheet_name.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+            {{ form.buttons_json.label_tag }}
+            <div id="button-builder" class="builder"></div>
+            <button class="ghost small-button" type="button" id="add-button">+ افزودن دکمه</button>
+            <details>
+              <summary>نمایش/ویرایش JSON پیشرفته</summary>
+              {{ form.buttons_json }}<div class="helptext">{{ form.buttons_json.help_text }}</div>
+            </details>
+            {{ form.buttons_json.errors }}
           </div>
         </div>
-
-        {% if form.uploaded_file_token.value %}
-          <div class="alert alert-info">فایل پیش‌نمایش‌شده آماده پردازش است.</div>
-        {% endif %}
-
-        <div class="form-grid one" style="margin-top:14px">
-          <div class="field">
-            {{ form.message_template.label_tag }}
-            {{ form.message_template }}
-            {% if form.message_template.help_text %}<div class="helptext">{{ form.message_template.help_text }}</div>{% endif %}
-            {% for error in form.message_template.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
+        <div data-message-section="template" class="stack message-panel">
+          <div class="field">{{ form.template_id.label_tag }}{{ form.template_id }}<div class="helptext">{{ form.template_id.help_text }}</div>{{ form.template_id.errors }}</div>
+          <div class="field">{{ form.template_fields.label_tag }}{{ form.template_fields }}<div class="helptext">{{ form.template_fields.help_text }}</div>{{ form.template_fields.errors }}</div>
+        </div>
+        <div data-message-section="otp" class="stack message-panel">
+          <div class="field">{{ form.otp_template.label_tag }}{{ form.otp_template }}<div class="helptext">{{ form.otp_template.help_text }}</div>{{ form.otp_template.errors }}</div>
         </div>
       </section>
 
       {% if preview %}
       <section class="card">
         <div class="section-title">
-          <h2><span class="step">۲</span>پیش‌نمایش</h2>
-          <span class="muted">{{ preview.shown_rows }} از {{ preview.total_rows }} ردیف انتخاب‌شده، کل فایل {{ preview.total_file_rows }} ردیف</span>
+          <h2><span class="step">۳</span>پیش‌نمایش واقعی داده</h2>
+          <span class="muted">{{ preview.shown_rows }} از {{ preview.total_rows }} ردیف انتخاب‌شده</span>
         </div>
         <div class="grid">
           <div class="stat stat-success"><span>آماده ارسال</span><b>{{ preview.valid_rows }}</b></div>
           <div class="stat stat-error"><span>شماره نامعتبر</span><b>{{ preview.invalid_rows }}</b></div>
           <div class="stat stat-warning"><span>تکراری</span><b>{{ preview.duplicate_rows }}</b></div>
-          {% if pricing.is_configured %}
-            <div class="stat"><span>برآورد هزینه این ارسال</span><b>{{ pricing.estimated_cost_display }} ریال</b></div>
-          {% endif %}
+          {% if pricing.is_configured %}<div class="stat"><span>برآورد هزینه</span><b>{{ pricing.estimated_cost_display }} ریال</b></div>{% endif %}
         </div>
-        {% if not preview.is_sendable %}
-          <div class="alert alert-danger">هیچ ردیف قابل ارسالی پیدا نشد.</div>
-        {% endif %}
         <div class="table-wrap" style="margin-top:14px">
           <table>
-            <tr><th>ردیف</th><th>نام</th><th>نام خانوادگی</th><th>شماره خام</th><th>شماره استاندارد</th><th>وضعیت</th><th>متن پیام</th></tr>
-            {% for r in preview.rows %}
+            <thead><tr><th>ردیف</th><th>نام</th><th>شماره</th><th>وضعیت</th><th>خروجی نهایی</th></tr></thead>
+            <tbody>
+            {% for row in preview.rows %}
               <tr>
-                <td>{{ r.row_number }}</td>
-                <td>{{ r.first_name }}</td>
-                <td>{{ r.last_name }}</td>
-                <td class="ltr">{{ r.raw_phone }}</td>
-                <td class="ltr">{{ r.normalized_phone }}</td>
-                <td><span class="badge badge-{{ r.status }}">{{ r.status_label }}</span></td>
-                <td>{{ r.final_text|linebreaksbr }}</td>
+                <td>{{ row.row_number }}</td><td>{{ row.full_name }}</td>
+                <td class="ltr">{{ row.normalized_phone|default:row.raw_phone }}</td>
+                <td><span class="badge badge-{{ row.status }}">{{ row.status_label }}</span></td>
+                <td>{{ row.final_text|linebreaksbr }}</td>
               </tr>
-            {% empty %}
-              <tr><td colspan="7" class="empty-state">ردیفی برای نمایش وجود ندارد.</td></tr>
             {% endfor %}
+            </tbody>
           </table>
         </div>
       </section>
       {% endif %}
 
       <section class="card">
-        <div class="section-title">
-          <h2><span class="step">۳</span>تنظیمات اجرا</h2>
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <fieldset>
-              <legend>{{ form.send_mode.label }}</legend>
-              {{ form.send_mode }}
-            </fieldset>
-            {% for error in form.send_mode.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.limit.label_tag }}
-            {{ form.limit }}
-            {% if form.limit.help_text %}<div class="helptext">{{ form.limit.help_text }}</div>{% endif %}
-            {% for error in form.limit.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.range_start.label_tag }}
-            {{ form.range_start }}
-            {% if form.range_start.help_text %}<div class="helptext">{{ form.range_start.help_text }}</div>{% endif %}
-            {% for error in form.range_start.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.range_end.label_tag }}
-            {{ form.range_end }}
-            {% if form.range_end.help_text %}<div class="helptext">{{ form.range_end.help_text }}</div>{% endif %}
-            {% for error in form.range_end.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.sleep_seconds.label_tag }}
-            {{ form.sleep_seconds }}
-            {% for error in form.sleep_seconds.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field checkline">
-            {{ form.skip_duplicates.label_tag }}
-            {{ form.skip_duplicates }}
-            {% for error in form.skip_duplicates.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title">
-          <h2><span class="step">۴</span>دکمه و تأیید</h2>
-        </div>
-        <div class="form-grid">
-          <div class="field checkline">
-            {{ form.button_enabled.label_tag }}
-            {{ form.button_enabled }}
-            {% for error in form.button_enabled.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.button_text.label_tag }}
-            {{ form.button_text }}
-            {% for error in form.button_text.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field">
-            {{ form.button_url.label_tag }}
-            {{ form.button_url }}
-            {% for error in form.button_url.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
-          <div class="field danger-zone">
-            {{ form.confirm_real_send.label_tag }}
-            {{ form.confirm_real_send }}
-            {% for error in form.confirm_real_send.errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
-          </div>
+        <div class="section-title"><h2><span class="step">۴</span>اجرا و کنترل</h2></div>
+        <div class="form-grid three">
+          <div class="field"><fieldset><legend>{{ form.send_mode.label }}</legend>{{ form.send_mode }}</fieldset>{{ form.send_mode.errors }}</div>
+          <div class="field">{{ form.range_start.label_tag }}{{ form.range_start }}<div class="helptext">{{ form.range_start.help_text }}</div>{{ form.range_start.errors }}</div>
+          <div class="field">{{ form.range_end.label_tag }}{{ form.range_end }}{{ form.range_end.errors }}</div>
+          <div class="field">{{ form.limit.label_tag }}{{ form.limit }}<div class="helptext">{{ form.limit.help_text }}</div>{{ form.limit.errors }}</div>
+          <div class="field">{{ form.sleep_seconds.label_tag }}{{ form.sleep_seconds }}{{ form.sleep_seconds.errors }}</div>
+          <div class="field">{{ form.max_retries.label_tag }}{{ form.max_retries }}{{ form.max_retries.errors }}</div>
+          <div class="field checkline">{{ form.skip_duplicates.label_tag }}{{ form.skip_duplicates }}{{ form.skip_duplicates.errors }}</div>
+          <div class="field danger-zone">{{ form.confirm_real_send.label_tag }}{{ form.confirm_real_send }}{{ form.confirm_real_send.errors }}</div>
         </div>
         <div class="actions">
-          <button class="ghost" type="submit" name="action" value="preview">پیش‌نمایش ۱۰ ردیف اول</button>
+          <button class="ghost" type="submit" name="action" value="preview">بررسی اکسل و پیش‌نمایش</button>
           <button type="submit" name="action" value="send">شروع پردازش</button>
         </div>
       </section>
     </div>
 
     <aside class="stack">
+      {% if preview.inspection %}
       <section class="card compact">
-        <h3>نیازمندی فایل</h3>
+        <h3>ستون‌های پیدا‌شده</h3>
+        <p class="helptext">برای نگاشت از حرف ستون استفاده کن. توکن‌های پیشنهادی فقط راهنما هستند.</p>
         <div class="quick-guide">
-          <div class="guide-item"><b>ستون اجباری</b><span class="muted">فقط موبایل؛ ستون‌های نام و نام خانوادگی اختیاری‌اند.</span></div>
-          <div class="guide-item"><b>فایل تک‌ستونه</b><span class="muted">هم با عنوان «موبایل» و هم بدون header پذیرفته می‌شود.</span></div>
-          <div class="guide-item"><b>متن ثابت</b><span class="muted">استفاده از متغیرها الزامی نیست. متغیرهای اختیاری: <code>{first_name}</code> <code>{last_name}</code> <code>{full_name}</code> <code>{phone}</code></span></div>
-          <div class="guide-item"><b>تست سریع</b><a class="btn ghost" href="{% url 'bale_single_test' %}" style="margin-top:8px">ارسال تست تک‌نفره</a></div>
+          {% for column in preview.inspection.columns %}
+          <div class="guide-item">
+            <b><span class="badge badge-muted">{{ column.key }}</span> {{ column.header }}</b>
+            <code>{{ column.token }}</code>
+          </div>
+          {% endfor %}
         </div>
       </section>
+      {% endif %}
 
       <section class="card compact">
-        <h3>هزینه پیام</h3>
-        {% if pricing.is_configured %}
-          <div class="quick-guide">
-            <div class="guide-item"><b>تعرفه تنظیم‌شده</b><span>{{ pricing.unit_price_display }} ریال برای هر ارسال موفق</span></div>
-            {% if preview %}<div class="guide-item"><b>برآورد این فایل</b><span>{{ pricing.estimated_cost_display }} ریال برای {{ preview.valid_rows }} شماره آماده ارسال</span></div>{% endif %}
-          </div>
-          <p class="helptext">این مبلغ برآوردی است؛ مبلغ قطعی را پنل سفیر تعیین می‌کند.</p>
-        {% else %}
-          <div class="alert alert-info">API سفیر تعرفه یا مانده اعتبار را برنمی‌گرداند. برای نمایش برآورد، تعرفه فعلی حسابت را در <code>BALE_MESSAGE_PRICE_RIAL</code> تنظیم کن.</div>
+        <h3>متغیرهای آماده</h3>
+        <div class="token-list">
+          <code>{% templatetag openvariable %}full_name{% templatetag closevariable %}</code> <span class="muted">نام کامل</span><br>
+          <code>{% templatetag openvariable %}first_name{% templatetag closevariable %}</code> <span class="muted">نام</span><br>
+          <code>{% templatetag openvariable %}last_name{% templatetag closevariable %}</code> <span class="muted">نام خانوادگی</span><br>
+          <code>{% templatetag openvariable %}phone{% templatetag closevariable %}</code> <span class="muted">شماره استاندارد</span><br>
+          <code>{% templatetag openvariable %}row_number{% templatetag closevariable %}</code> <span class="muted">ردیف اکسل</span>
+        </div>
+        {% if global_variables %}
+          <hr>
+          <b>ثابت‌های سراسری</b>
+          {% for key, value in global_variables.items %}<div><code>{% templatetag openvariable %}{{ key }}{% templatetag closevariable %}</code> {{ value }}</div>{% endfor %}
         {% endif %}
       </section>
 
       <section class="card compact">
-        <div class="section-title">
-          <h3>گزارش‌های اخیر</h3>
-          <a class="muted" href="{% url 'bale_batch_list' %}">همه</a>
+        <h3>ساخت متغیر دلخواه</h3>
+        <p>مثلاً ستون A نام بیمار و ستون D تاریخ باشد:</p>
+        <code>{"name":"A","date":"D"}</code>
+        <p>سپس در متن بنویس:</p>
+        <code>سلام {% templatetag openvariable %}name{% templatetag closevariable %}؛ نوبت شما {% templatetag openvariable %}date{% templatetag closevariable %} است.</code>
+      </section>
+
+      <section class="card compact">
+        <h3>قابلیت‌های رسمی سفیر</h3>
+        <div class="quick-guide">
+          <div class="guide-item">متن و متغیر نامحدود</div>
+          <div class="guide-item">فایل، پیام رمزدار و OTP</div>
+          <div class="guide-item">قالب تأییدشده با text_fields</div>
+          <div class="guide-item">دکمه URL، مینی‌اپ و رونوشت</div>
+          <div class="guide-item">request_id پایدار برای جلوگیری از ارسال تکراری</div>
         </div>
-        <div class="table-wrap mini-table">
-          <table>
-            <tr><th>شناسه</th><th>وضعیت</th><th>کل</th></tr>
-            {% for b in recent_batches %}
-              <tr>
-                <td><a href="{% url 'bale_batch_detail' b.id %}">#{{ b.id }}</a></td>
-                <td><span class="badge badge-{{ b.status }}">{{ b.get_status_display }}</span></td>
-                <td>{{ b.total_rows }}</td>
-              </tr>
-            {% empty %}
-              <tr><td colspan="3" class="empty-state">گزارشی وجود ندارد.</td></tr>
-            {% endfor %}
-          </table>
-        </div>
+      </section>
+
+      <section class="card compact">
+        <h3>برآورد هزینه</h3>
+        {% if pricing.is_configured %}
+          <p><b>{{ pricing.unit_price_display }} ریال</b> برای هر پیام موفق</p>
+          <p class="helptext">این مبلغ تخمینی است و مبلغ قطعی را پنل سفیر تعیین می‌کند.</p>
+        {% else %}
+          <p class="muted">تعرفه‌ای در تنظیمات وارد نشده است.</p>
+        {% endif %}
+      </section>
+
+      <section class="card compact">
+        <h3>گزارش‌های اخیر</h3>
+        {% for batch in recent_batches %}
+          <div class="guide-item"><a href="{% url 'bale_batch_detail' batch.id %}">#{{ batch.id }} — {{ batch.get_status_display }}</a></div>
+        {% empty %}<p class="muted">هنوز گزارشی نیست.</p>{% endfor %}
       </section>
     </aside>
   </div>
 </form>
+
+<style>
+  .message-panel{margin-top:16px;padding-top:16px;border-top:1px solid var(--border-soft)}
+  .token-list code{margin:3px 0}.card hr{border:0;border-top:1px solid var(--border-soft);margin:14px 0}
+  .builder{display:grid;gap:8px;margin-bottom:8px}.builder-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;padding:9px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:8px}
+  .button-row{grid-template-columns:1fr 130px 1.5fr 75px auto}.small-button{min-height:34px;padding:6px 10px}.remove-row{background:#fff;color:var(--red);border:1px solid #fecaca;padding:6px 9px;min-height:34px}
+  details{margin-top:10px}summary{cursor:pointer;color:var(--muted);font-weight:700}
+  @media(max-width:700px){.builder-row,.button-row{grid-template-columns:1fr}.remove-row{width:100%}}
+</style>
+<script>
+(function () {
+  const select = document.getElementById('id_message_type');
+  const form = document.getElementById('campaign-form');
+  const variableStore = document.getElementById('id_variable_mapping');
+  const buttonStore = document.getElementById('id_buttons_json');
+  const variableBuilder = document.getElementById('variable-builder');
+  const buttonBuilder = document.getElementById('button-builder');
+
+  function safeJson(value, fallback) {
+    try { return JSON.parse(value || ''); } catch (_) { return fallback; }
+  }
+  function removeButton() {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'remove-row'; button.textContent = 'حذف';
+    button.addEventListener('click', function () { button.parentElement.remove(); syncStores(); });
+    return button;
+  }
+  function addVariable(key, column) {
+    const row = document.createElement('div'); row.className = 'builder-row';
+    const name = document.createElement('input'); name.placeholder = 'نام متغیر؛ مثل visit_date'; name.value = key || ''; name.dataset.role = 'key'; name.dir = 'ltr';
+    const source = document.createElement('input'); source.placeholder = 'ستون؛ مثل D یا تاریخ مراجعه'; source.value = column || ''; source.dataset.role = 'column';
+    row.append(name, source, removeButton()); variableBuilder.append(row);
+  }
+  function addButton(item) {
+    item = item || {};
+    const row = document.createElement('div'); row.className = 'builder-row button-row';
+    const title = document.createElement('input'); title.placeholder = 'متن دکمه'; title.value = item.text || ''; title.dataset.role = 'text';
+    const type = document.createElement('select'); type.dataset.role = 'type';
+    [['url','لینک'],['web_app','مینی‌اپ'],['copy_text','رونوشت']].forEach(function(option) {
+      const el = document.createElement('option'); el.value = option[0]; el.textContent = option[1]; type.append(el);
+    }); type.value = item.type || 'url';
+    const value = document.createElement('input'); value.placeholder = 'آدرس یا متن؛ متغیر مجاز است'; value.value = item.value || ''; value.dataset.role = 'value'; value.dir = 'ltr';
+    const line = document.createElement('input'); line.type = 'number'; line.min = '1'; line.max = '10'; line.value = item.row || 1; line.dataset.role = 'row'; line.title = 'ردیف دکمه';
+    row.append(title, type, value, line, removeButton()); buttonBuilder.append(row);
+  }
+  function syncStores() {
+    const variables = {};
+    variableBuilder.querySelectorAll('.builder-row').forEach(function(row) {
+      const key = row.querySelector('[data-role="key"]').value.trim();
+      const column = row.querySelector('[data-role="column"]').value.trim();
+      if (key || column) variables[key] = column;
+    });
+    const buttons = [];
+    buttonBuilder.querySelectorAll('.builder-row').forEach(function(row) {
+      const text = row.querySelector('[data-role="text"]').value.trim();
+      const value = row.querySelector('[data-role="value"]').value.trim();
+      if (text || value) buttons.push({
+        text: text,
+        type: row.querySelector('[data-role="type"]').value,
+        value: value,
+        row: Number(row.querySelector('[data-role="row"]').value || 1)
+      });
+    });
+    variableStore.value = JSON.stringify(variables);
+    buttonStore.value = JSON.stringify(buttons);
+  }
+  function loadVariableStore() {
+    variableBuilder.replaceChildren();
+    Object.entries(safeJson(variableStore.value, {})).forEach(function(entry) { addVariable(entry[0], entry[1]); });
+  }
+  function loadButtonStore() {
+    buttonBuilder.replaceChildren();
+    safeJson(buttonStore.value, []).forEach(addButton);
+  }
+  loadVariableStore();
+  loadButtonStore();
+  variableStore.addEventListener('change', loadVariableStore);
+  buttonStore.addEventListener('change', loadButtonStore);
+  document.getElementById('add-variable').addEventListener('click', function () { addVariable('', ''); });
+  document.getElementById('add-button').addEventListener('click', function () { addButton({}); });
+  form.addEventListener('submit', syncStores);
+
+  function toggleSections() {
+    document.querySelectorAll('[data-message-section]').forEach(function(section) {
+      section.style.display = section.dataset.messageSection === select.value ? 'grid' : 'none';
+    });
+  }
+  if (select) {
+    select.addEventListener('change', toggleSections);
+    toggleSections();
+  }
+})();
+</script>
 {% endblock %}

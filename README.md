@@ -1,23 +1,132 @@
-# bale_send_message
+# Bale Safir Local Sender
 
-Send fixed or personalized Bale Safir messages from Excel files.
+داشبورد محلی Django برای ارسال پیام تکی یا انبوه از طریق
+[سرویس رسمی سفیر بله](https://docs.bale.ai/safir). این پروژه عمداً لاگین
+ندارد و فقط باید روی 127.0.0.1 اجرا شود.
 
-## Excel format
+## قابلیت‌ها
 
-Only a mobile-number column is required. A single-column workbook is accepted
-with a header such as `موبایل`, `شماره`, `phone`, or `phone_number`, and is also
-accepted without a header when its first cell is a valid Iranian mobile number.
-Name and family-name columns are optional, and the message may be completely
-static with no placeholders.
+- خواندن xlsx و xlsm، انتخاب شیت و ردیف header
+- تعیین ستون موبایل، نام و نام خانوادگی با عنوان، حرف یا شماره ستون
+- ساخت هر تعداد متغیر از ستون‌های اکسل و متغیرهای ثابت سراسری
+- پیش‌نمایش متن نهایی، شماره‌های نامعتبر و تکراری قبل از ارسال
+- پیام متنی، فایل/چندرسانه‌ای، پیام رمزدار، OTP و قالب تأییدشده سفیر
+- دکمه‌های چندردیفی از نوع url، web_app و copy_text
+- متن قابل‌رونوشت در خود پیام
+- پردازش پس‌زمینه محلی، توقف ارسال، بازه‌بندی و فاصله بین درخواست‌ها
+- retry محدود برای 429 و خطاهای 5xx با همان request_id
+- گزارش زنده و فایل Excel شامل پاسخ API، message_id و تعداد retry
+- تنظیم کلید API، شناسه بازو، تعرفه و متغیرها از خود داشبورد
 
-## Cost estimate
+## نصب و اجرا
 
-The documented Safir API does not expose a tariff or balance endpoint. Set the
-current tariff for your account in `.env` to show a pre-send dashboard estimate:
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    cp .env.example .env
+    python manage.py migrate
+    python manage.py runserver 127.0.0.1:8000
 
-```env
-BALE_MESSAGE_PRICE_RIAL=0
-```
+سپس http://127.0.0.1:8000/settings/ را باز و API Access Key و bot_id را
+وارد کنید. کلید از پنل کسب‌وکار بله دریافت می‌شود. مقدار واردشده در SQLite
+محلی نگه‌داری می‌شود و در گزارش‌ها نمایش داده نمی‌شود.
 
-Use the current value supplied in your Safir panel/contract. `0` disables the
-estimate. The displayed total is an estimate based on valid, non-duplicate rows.
+> این داشبورد احراز هویت ندارد. آن را با 0.0.0.0 اجرا نکنید، پشت reverse
+> proxy عمومی نگذارید و فایل SQLite را به Git اضافه نکنید.
+
+## اکسل و متغیرها
+
+فقط ستون موبایل اجباری است. شماره‌ها به قالب رسمی 989xxxxxxxxx تبدیل
+می‌شوند. در داشبورد می‌توانید ستون را با عنوان (شماره موبایل)، حرف (C) یا
+شماره یک‌مبنایی (3) معرفی کنید.
+
+برای ساخت متغیر دلخواه، در فیلد «نگاشت متغیرها» JSON بنویسید:
+
+    {
+      "name": "A",
+      "visit_date": "تاریخ مراجعه",
+      "tracking_code": "D"
+    }
+
+سپس در هر متن از قالب {{variable}} استفاده کنید:
+
+    سلام {{name}}
+    زمان مراجعه شما {{visit_date}} و کد پیگیری {{tracking_code}} است.
+
+متغیرهای داخلی همیشه در دسترس‌اند: {{first_name}}، {{last_name}}،
+{{full_name}}، {{phone}} و {{row_number}}.
+
+متغیرهای ثابت مانند نام مرکز، آدرس سایت یا شماره تماس را در صفحه تنظیمات با
+یک JSON object تعریف کنید. مقدار متغیرهای ثابت در زمان ساخت هر batch داخل آن
+snapshot می‌شود تا گزارش قدیمی با تغییر تنظیمات عوض نشود.
+
+## انواع پیام مطابق مستندات سفیر
+
+### متن، فایل و دکمه
+
+متن می‌تواند خالی باشد اگر فایل پیوست انتخاب شده باشد. فایل یک‌بار با
+/api/v3/upload_file آپلود و file_id آن برای تمام ردیف‌های batch استفاده
+می‌شود.
+
+دکمه‌ها با JSON تعریف می‌شوند:
+
+    [
+      {"text": "ورود به هلسا", "type": "url", "value": "https://helssa.ir", "row": 1},
+      {"text": "کپی کد", "type": "copy_text", "value": "{{tracking_code}}", "row": 2}
+    ]
+
+برای web_app مقدار value باید URL معتبر HTTPS/HTTP باشد. دکمه‌های دارای row
+یکسان کنار هم قرار می‌گیرند.
+
+### قالب تأییدشده سفیر
+
+ابتدا قالب را در پنل کسب‌وکار بله بسازید و پس از تأیید، template_id و فیلدهای
+آن را وارد کنید:
+
+    {
+      "name": "{{full_name}}",
+      "date": "{{visit_date}}"
+    }
+
+نام کلیدها باید دقیقاً با text_fields قالب تأییدشده یکسان باشد.
+
+### OTP
+
+مقدار OTP می‌تواند ثابت یا متغیر اکسل مانند {{otp}} باشد. خروجی نهایی هر ردیف
+باید فقط عدد باشد؛ ارقام فارسی و عربی پیش از ارسال به رقم لاتین تبدیل می‌شوند.
+
+## رفتار خطا و جلوگیری از ارسال تکراری
+
+پاسخ رسمی error_data و کدهای 2، 3، 4، 8، 17، 20 و 21 پردازش می‌شوند. در خطای
+موقت RateLimitExceeded، خطاهای شبکه و HTTP 5xx تلاش مجدد با backoff انجام
+می‌شود. request_id از شناسه batch، ردیف و شماره مقصد به‌شکل پایدار ساخته
+می‌شود و در تمام retryها ثابت می‌ماند؛ مطابق مستندات سفیر این کار مانع ارسال
+دوباره همان درخواست می‌شود.
+
+همیشه ابتدا حالت dry-run و یک بازه کوچک را بررسی کنید. «موفق» در گزارش یعنی
+API سفیر درخواست را پذیرفته است، نه اینکه کاربر حتماً پیام را خوانده باشد.
+
+## تنظیم با فایل env
+
+مقادیر صفحه تنظیمات بر env اولویت دارند؛ اگر کلید یا شناسه در دیتابیس خالی
+باشد، مقدار env استفاده می‌شود:
+
+    BALE_API_ACCESS_KEY=CHANGE_ME
+    BALE_BOT_ID=0
+    BALE_SEND_URL=https://safir.bale.ai/api/v3/send_message
+    BALE_UPLOAD_URL=https://safir.bale.ai/api/v3/upload_file
+    BALE_REQUEST_TIMEOUT=20
+    BALE_DEFAULT_SLEEP_SECONDS=0.4
+    BALE_MAX_RETRIES=2
+    BALE_MESSAGE_PRICE_RIAL=0
+    BALE_MAX_UPLOAD_SIZE_MB=10
+    BALE_MAX_ATTACHMENT_SIZE_MB=100
+
+API رسمی تعرفه یا مانده اعتبار را برنمی‌گرداند؛ BALE_MESSAGE_PRICE_RIAL فقط
+برای برآورد محلی است.
+
+## تست
+
+    python manage.py check
+    python manage.py makemigrations --check --dry-run
+    python manage.py test
